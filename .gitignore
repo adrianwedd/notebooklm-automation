@@ -1,0 +1,33 @@
+# Export directories (can be large with audio/video)
+exports/
+
+# Temporary test exports
+/tmp/test-export/
+/tmp/batch-test/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+
+# Credentials
+.env
+*.key
+*.pem
+cookies.json
+profiles/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
