@@ -170,29 +170,35 @@ import sys
 try:
     data = json.load(sys.stdin)
 
-    # Map artifact type to status field name
-    type_map = {
-        'audio': 'audio_overviews',
-        'video': 'video_overviews',
-        'report': 'reports',
-        'quiz': 'quizzes',
-        'flashcards': 'flashcards',
-        'mindmap': 'mindmaps',
-        'slides': 'slides',
-        'infographic': 'infographics',
-        'data-table': 'data_tables'
-    }
-
-    field_name = type_map.get('$artifact_type')
-    if not field_name or field_name not in data:
+    # Ensure we have an array
+    if not isinstance(data, list):
         sys.exit(1)
 
-    artifacts = data[field_name]
-    if not artifacts or len(artifacts) == 0:
+    # Map artifact type to JSON type field value
+    type_map = {
+        'audio': 'audio_overview',
+        'video': 'video_overview',
+        'report': 'report',
+        'quiz': 'quiz',
+        'flashcards': 'flashcards',
+        'mindmap': 'mindmap',
+        'slides': 'slides',
+        'infographic': 'infographic',
+        'data-table': 'data_table'
+    }
+
+    target_type = type_map.get('$artifact_type')
+    if not target_type:
+        sys.exit(1)
+
+    # Find artifacts matching the requested type
+    matching_artifacts = [a for a in data if a.get('type') == target_type]
+
+    if not matching_artifacts:
         sys.exit(1)
 
     # Get the most recent artifact (last in list)
-    artifact = artifacts[-1]
+    artifact = matching_artifacts[-1]
 
     # Extract ID and status
     artifact_id = artifact.get('id', '')
