@@ -94,7 +94,7 @@ done
 [[ ! -f "$CONFIG_FILE" ]] && error "Config file not found: $CONFIG_FILE"
 
 # Validate JSON
-python3 -c "import json; json.load(open('$CONFIG_FILE'))" 2>/dev/null || error "Invalid JSON in config file: $CONFIG_FILE"
+python3 -c "import json, sys; json.load(open(sys.argv[1]))" "$CONFIG_FILE" 2>/dev/null || error "Invalid JSON in config file: $CONFIG_FILE"
 
 info "Loading config from: $CONFIG_FILE"
 
@@ -332,15 +332,17 @@ info "Notebook ID: $NOTEBOOK_ID"
 info "Notebook URL: $NOTEBOOK_URL"
 
 # Output JSON summary
-python3 <<PYEOF
+NOTEBOOK_ID_DATA="$NOTEBOOK_ID" TITLE_DATA="$TITLE" NOTEBOOK_URL_DATA="$NOTEBOOK_URL" SOURCES_ADDED_DATA="$SOURCES_ADDED" SOURCES_FAILED_DATA="$SOURCES_FAILED" ARTIFACTS_CREATED_DATA="$ARTIFACTS_CREATED" ARTIFACTS_FAILED_DATA="$ARTIFACTS_FAILED" python3 <<'PYEOF'
 import json
+import os
+
 print(json.dumps({
-    'notebook_id': '$NOTEBOOK_ID',
-    'title': $(echo "$TITLE" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read().strip()))"),
-    'notebook_url': '$NOTEBOOK_URL',
-    'sources_added': $SOURCES_ADDED,
-    'sources_failed': $SOURCES_FAILED,
-    'artifacts_created': $ARTIFACTS_CREATED,
-    'artifacts_failed': $ARTIFACTS_FAILED
+    'notebook_id': os.environ['NOTEBOOK_ID_DATA'],
+    'title': os.environ['TITLE_DATA'],
+    'notebook_url': os.environ['NOTEBOOK_URL_DATA'],
+    'sources_added': int(os.environ['SOURCES_ADDED_DATA']),
+    'sources_failed': int(os.environ['SOURCES_FAILED_DATA']),
+    'artifacts_created': int(os.environ['ARTIFACTS_CREATED_DATA']),
+    'artifacts_failed': int(os.environ['ARTIFACTS_FAILED_DATA'])
 }, indent=2))
 PYEOF
