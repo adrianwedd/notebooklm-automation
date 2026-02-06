@@ -54,12 +54,14 @@ Export NotebookLM notebooks to local directory structures:
   - Quizzes, flashcards, data tables (JSON/CSV)
 - ❌ Chat history (not supported by API)
 
-### Phase 2: Automation (Planned)
+### Phase 2: Automation (Partial - In Progress)
 
-- Create notebooks programmatically
-- Add sources (files, URLs, text)
-- Generate studio artifacts
-- Query notebooks via chat API
+- ✅ Create notebooks programmatically
+- ✅ Add sources (URLs, text, Google Drive)
+- ⏳ Generate studio artifacts (planned)
+- ⏳ End-to-end automation (planned)
+- ❌ File uploads (not supported by nlm CLI)
+- ❌ Chat automation (reserved for interactive use)
 
 ## Export Structure
 
@@ -152,6 +154,64 @@ Successful:       78
 Errors:           2
 Skipped:          12
 Total size:       12.4 GB
+```
+
+### create-notebook.sh
+
+Create a new NotebookLM notebook programmatically.
+
+**Usage:**
+```bash
+./scripts/create-notebook.sh "Notebook Title"
+```
+
+**Returns:** JSON with notebook ID
+```json
+{
+  "id": "abc-123-def-456",
+  "title": "Notebook Title",
+  "sources_added": 0
+}
+```
+
+**Example:**
+```bash
+# Create notebook and capture ID
+NOTEBOOK_ID=$(./scripts/create-notebook.sh "My Research" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+echo "Created: $NOTEBOOK_ID"
+```
+
+### add-sources.sh
+
+Add sources to an existing notebook with automatic type detection.
+
+**Usage:**
+```bash
+./scripts/add-sources.sh <notebook-id> <source1> [source2] ...
+```
+
+**Source types (auto-detected):**
+- URLs: `https://example.com/article`
+- Text content: `text:"Your content here"`
+- Google Drive: `drive://document-id`
+
+**Note:** File uploads not supported by nlm CLI. Upload files to Google Drive first, then add via `drive://` prefix.
+
+**Example:**
+```bash
+./scripts/add-sources.sh "abc-123-def-456" \
+  "https://www.anthropic.com" \
+  "text:Claude is an AI assistant" \
+  "drive://1A2B3C4D5E"
+```
+
+**Returns:** JSON with success counts
+```json
+{
+  "notebook_id": "abc-123-def-456",
+  "sources_added": 3,
+  "sources_failed": 0
+}
 ```
 
 ## Claude Code Integration
@@ -267,6 +327,14 @@ Smoke tests verified (2026-02-06):
 - ✅ Download audio (42MB MP3 downloaded)
 - ✅ Export notebook (323MB with 8 artifacts)
 - ✅ Source content extraction (5-50KB per source)
+
+Phase 2 automation tests (2026-02-06):
+- ✅ Create notebook (returns valid UUID)
+- ✅ Add URL source (successfully added)
+- ✅ Add text source (successfully added)
+- ✅ Add Drive source (not tested - no Drive file available)
+- ✅ JSON output (properly escaped)
+- ✅ Error handling (proper exit codes)
 
 ## License
 
