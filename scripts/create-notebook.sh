@@ -1,32 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Create a NotebookLM notebook with optional sources
-# Usage: ./create-notebook.sh <title> [--sources file1.pdf,url1,text:content]
+# Create a NotebookLM notebook
+# Usage: ./create-notebook.sh <title>
 
-TITLE="${1:?Usage: create-notebook.sh <title> [--sources file1,file2,...]}"
-SOURCES=""
+# Show help if requested
+if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
+  cat <<EOF
+Usage: create-notebook.sh <title>
 
-# Parse optional --sources flag
-shift
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --sources)
-      SOURCES="$2"
-      shift 2
-      ;;
-    *)
-      echo "Unknown option: $1"
-      exit 1
-      ;;
-  esac
-done
+Creates a new NotebookLM notebook with the specified title.
+
+Arguments:
+  title    The title for the new notebook
+
+Options:
+  -h, --help    Show this help message
+
+Example:
+  ./create-notebook.sh "My Research Notes"
+
+Note: To add sources to a notebook, use add-sources.sh
+EOF
+  exit 0
+fi
+
+TITLE="${1:?Usage: create-notebook.sh <title>}"
 
 echo "Creating notebook: $TITLE"
 
 # Create notebook
+# Temporarily disable errexit to capture exit code correctly
+set +e
 NOTEBOOK_JSON=$(nlm create notebook "$TITLE" 2>&1)
-if [ $? -ne 0 ]; then
+EXIT_CODE=$?
+set -e
+
+if [ $EXIT_CODE -ne 0 ]; then
   echo "Error: Failed to create notebook"
   echo "$NOTEBOOK_JSON"
   exit 1
@@ -61,11 +71,12 @@ fi
 echo "✓ Created notebook: $NOTEBOOK_ID"
 echo "  Title: $TITLE"
 
-# Output JSON result
-cat <<EOF
-{
-  "id": "$NOTEBOOK_ID",
-  "title": "$TITLE",
-  "sources_added": 0
-}
-EOF
+# Output JSON result with proper escaping
+python3 -c "
+import json
+print(json.dumps({
+    'id': '''$NOTEBOOK_ID''',
+    'title': '''$TITLE''',
+    'sources_added': 0
+}, indent=2))
+"
