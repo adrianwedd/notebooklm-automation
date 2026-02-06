@@ -299,11 +299,11 @@ if [[ $E2E_EXIT -ne 0 ]]; then
     test_failed "Test 5 - automate-notebook.sh failed"
     echo "$E2E_OUTPUT"
 else
-    # Parse JSON output
-    LAST_LINE=$(echo "$E2E_OUTPUT" | tail -1)
-    E2E_NOTEBOOK_ID=$(echo "$LAST_LINE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('notebook_id', ''))" 2>/dev/null || echo "")
-    E2E_SOURCES_ADDED=$(echo "$LAST_LINE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sources_added', 0))" 2>/dev/null || echo "0")
-    E2E_ARTIFACTS_CREATED=$(echo "$LAST_LINE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('artifacts_created', 0))" 2>/dev/null || echo "0")
+    # Parse JSON output - extract complete JSON block from first { to last }
+    JSON_OUTPUT=$(echo "$E2E_OUTPUT" | sed -n '/{/,/}/p')
+    E2E_NOTEBOOK_ID=$(echo "$JSON_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('notebook_id', ''))" 2>/dev/null || echo "")
+    E2E_SOURCES_ADDED=$(echo "$JSON_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sources_added', 0))" 2>/dev/null || echo "0")
+    E2E_ARTIFACTS_CREATED=$(echo "$JSON_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('artifacts_created', 0))" 2>/dev/null || echo "0")
 
     # Track notebook for cleanup
     if [[ -n "$E2E_NOTEBOOK_ID" ]]; then
