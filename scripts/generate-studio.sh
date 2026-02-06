@@ -77,11 +77,13 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --download)
+            [[ -z "${2:-}" ]] && error "--download requires an argument"
             DOWNLOAD_PATH="$2"
             WAIT_FLAG=true  # Download implies wait
             shift 2
             ;;
         --description)
+            [[ -z "${2:-}" ]] && error "--description requires an argument"
             DESCRIPTION="$2"
             shift 2
             ;;
@@ -160,13 +162,13 @@ check_status() {
     local status_output
     status_output=$(nlm status artifacts "$notebook_id" --json 2>/dev/null) || return 1
 
-    # Use Python to parse JSON and find matching artifact
-    python3 <<EOF
+    # Use Python to parse JSON and find matching artifact (pass via stdin)
+    echo "$status_output" | python3 -c "
 import json
 import sys
 
 try:
-    data = json.loads('''$status_output''')
+    data = json.load(sys.stdin)
 
     # Map artifact type to status field name
     type_map = {
@@ -197,12 +199,12 @@ try:
     status = artifact.get('status', '')
 
     # Output: artifact_id|status
-    print(f"{artifact_id}|{status}")
+    print(f'{artifact_id}|{status}')
     sys.exit(0)
 
 except Exception as e:
     sys.exit(1)
-EOF
+"
 }
 
 # If not waiting, just output the initial status
@@ -211,13 +213,13 @@ if [[ "$WAIT_FLAG" == false ]]; then
 
     result=$(check_status "$NOTEBOOK_ID" "$ARTIFACT_TYPE") || {
         warn "Could not retrieve artifact status immediately"
-        echo "{\"notebook_id\": \"$NOTEBOOK_ID\", \"artifact_type\": \"$ARTIFACT_TYPE\", \"artifact_id\": null, \"status\": \"initiated\"}"
+        python3 -c "import json; print(json.dumps({'notebook_id': '$NOTEBOOK_ID', 'artifact_type': '$ARTIFACT_TYPE', 'artifact_id': None, 'status': 'initiated'}))"
         exit 0
     }
 
     IFS='|' read -r artifact_id status <<< "$result"
 
-    echo "{\"notebook_id\": \"$NOTEBOOK_ID\", \"artifact_type\": \"$ARTIFACT_TYPE\", \"artifact_id\": \"$artifact_id\", \"status\": \"$status\"}"
+    python3 -c "import json; print(json.dumps({'notebook_id': '$NOTEBOOK_ID', 'artifact_type': '$ARTIFACT_TYPE', 'artifact_id': '$artifact_id', 'status': '$status'}))"
     exit 0
 fi
 
@@ -256,7 +258,7 @@ done
 # Check if we timed out
 if [[ $ATTEMPT -ge $MAX_ATTEMPTS ]]; then
     warn "Timeout: Artifact generation did not complete within 5 minutes"
-    echo "{\"notebook_id\": \"$NOTEBOOK_ID\", \"artifact_type\": \"$ARTIFACT_TYPE\", \"artifact_id\": \"$ARTIFACT_ID\", \"status\": \"$STATUS\"}"
+    python3 -c "import json; print(json.dumps({'notebook_id': '$NOTEBOOK_ID', 'artifact_type': '$ARTIFACT_TYPE', 'artifact_id': '$ARTIFACT_ID', 'status': '$STATUS'}))"
     exit 1
 fi
 
@@ -287,4 +289,4 @@ if [[ -n "$DOWNLOAD_PATH" ]]; then
 fi
 
 # Output final JSON
-echo "{\"notebook_id\": \"$NOTEBOOK_ID\", \"artifact_type\": \"$ARTIFACT_TYPE\", \"artifact_id\": \"$ARTIFACT_ID\", \"status\": \"$STATUS\"}"
+python3 -c "import json; print(json.dumps({'notebook_id': '$NOTEBOOK_ID', 'artifact_type': '$ARTIFACT_TYPE', 'artifact_id': '$ARTIFACT_ID', 'status': '$STATUS'}))"
