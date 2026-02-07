@@ -79,6 +79,27 @@ declare -a PIDS
 declare -a TYPES_RUNNING
 declare -a OUTPUT_FILES
 
+# Progress monitoring function
+monitor_progress() {
+  local pids=("$@")
+  local total=${#pids[@]}
+  local completed=0
+
+  while [ $completed -lt $total ]; do
+    completed=0
+    for pid in "${pids[@]}"; do
+      if ! kill -0 "$pid" 2>/dev/null; then
+        completed=$((completed + 1))
+      fi
+    done
+
+    echo -ne "\rProgress: $completed/$total artifacts completed"
+    sleep 2
+  done
+
+  echo "" # New line after progress
+}
+
 # Generate artifacts in parallel
 echo "Starting parallel generation..."
 for artifact_type in "${ARTIFACT_TYPES[@]}"; do
@@ -109,24 +130,23 @@ if [ "$WAIT_FLAG" = true ]; then
   echo "Waiting for completion..."
   echo ""
 
+  # Monitor progress in background
+  monitor_progress "${PIDS[@]}" &
+  MONITOR_PID=$!
+
   SUCCESS_COUNT=0
   FAILED_COUNT=0
 
-  for i in "${!PIDS[@]}"; do
-    pid=${PIDS[$i]}
-    artifact_type=${TYPES_RUNNING[$i]}
-    output_file=${OUTPUT_FILES[$i]}
-
-    echo "[$((i+1))/${#PIDS[@]}] Waiting for: $artifact_type (PID: $pid)"
-
-    if wait "$pid"; then
-      echo "    ✓ Completed successfully"
-      SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-    else
-      echo "    ✗ Failed (see $output_file)"
-      FAILED_COUNT=$((FAILED_COUNT + 1))
-    fi
+  # Wait for all jobs to complete
+  for pid in "${PIDS[@]}"; do
+    wait "$pid" || FAILED_COUNT=$((FAILED_COUNT + 1))
   done
+
+  # Stop progress monitor
+  kill "$MONITOR_PID" 2>/dev/null || true
+  wait "$MONITOR_PID" 2>/dev/null || true
+
+  SUCCESS_COUNT=$(( ${#PIDS[@]} - FAILED_COUNT ))
 
   echo ""
   echo "=== Generation Complete ==="
