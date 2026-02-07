@@ -71,16 +71,37 @@ WIKI_SOURCES=$(python3 "$SCRIPT_DIR/../lib/wikipedia_search.py" "$TOPIC" 2)
 WIKI_COUNT=$(echo "$WIKI_SOURCES" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
 
 # Combine sources
-SOURCES_JSON=$(python3 -c "
-import sys, json
-web = $WEB_SOURCES
-wiki = $WIKI_SOURCES
+SOURCES_JSON=$(WEB_SOURCES_DATA="$WEB_SOURCES" WIKI_SOURCES_DATA="$WIKI_SOURCES" DEPTH_DATA="$DEPTH" python3 <<'PYEOF'
+import sys, json, os
+
+web_data = os.environ['WEB_SOURCES_DATA']
+wiki_data = os.environ['WIKI_SOURCES_DATA']
+depth = int(os.environ['DEPTH_DATA'])
+
+web = json.loads(web_data)
+wiki = json.loads(wiki_data)
 all_sources = web + wiki
-print(json.dumps(all_sources[:$DEPTH]))  # Limit to depth
+
+# Limit to depth before deduplication
+limited = all_sources[:depth * 2]  # Get extra for dedup
+
+print(json.dumps(limited))
+PYEOF
+)
+
+# Deduplicate
+echo "  Deduplicating sources..."
+SOURCES_JSON=$(echo "$SOURCES_JSON" | python3 "$SCRIPT_DIR/../lib/deduplicate_sources.py" -)
+
+# Final trim to depth
+SOURCES_JSON=$(echo "$SOURCES_JSON" | python3 -c "
+import sys, json
+sources = json.load(sys.stdin)
+print(json.dumps(sources[:$DEPTH]))
 ")
 
 SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
-echo "  Found: $WEB_COUNT web + $WIKI_COUNT Wikipedia = $SOURCE_COUNT total sources"
+echo "  Final: $SOURCE_COUNT unique sources"
 
 # Step 2: Create notebook with sources
 echo "[2/3] Creating notebook..."
