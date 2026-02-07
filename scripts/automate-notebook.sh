@@ -3,11 +3,12 @@
 # automate-notebook.sh - End-to-end NotebookLM automation from JSON config
 #
 # Usage:
-#   automate-notebook.sh --config <file> [--export <dir>] [--help]
+#   automate-notebook.sh --config <file> [--export <dir>] [--parallel] [--help]
 #
 # Arguments:
 #   --config <file>    Path to JSON config file (required)
 #   --export <dir>     Export notebook to directory after completion (optional)
+#   --parallel         Generate artifacts in parallel (faster)
 #
 # Config format:
 #   {
@@ -67,6 +68,7 @@ show_help() {
 # Parse arguments
 CONFIG_FILE=""
 EXPORT_DIR=""
+PARALLEL_FLAG=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -82,6 +84,10 @@ while [[ $# -gt 0 ]]; do
             [[ -z "${2:-}" ]] && error "--export requires an argument"
             EXPORT_DIR="$2"
             shift 2
+            ;;
+        --parallel)
+            PARALLEL_FLAG=true
+            shift
             ;;
         *)
             error "Unknown argument: $1. Try --help for usage."
@@ -243,9 +249,51 @@ STUDIO_COUNT=$(echo "$STUDIO_JSON" | python3 -c "import sys,json; print(len(json
 if [[ "$STUDIO_COUNT" -eq 0 ]]; then
     warn "No studio artifacts to generate"
 else
-    # Iterate through studio artifacts using Python
-    # Pass STUDIO_JSON, NOTEBOOK_ID, and SCRIPT_DIR as environment variables
-    STUDIO_RESULT=$(STUDIO_JSON_DATA="$STUDIO_JSON" NOTEBOOK_ID_DATA="$NOTEBOOK_ID" SCRIPT_DIR_DATA="$SCRIPT_DIR" python3 <<'PYEOF'
+    # Check if we should use parallel generation
+    if [[ "$PARALLEL_FLAG" = true && "$STUDIO_COUNT" -gt 1 ]]; then
+        info "Generating $STUDIO_COUNT artifacts in parallel..."
+
+        # Validate parallel script exists
+        if [[ ! -x "$SCRIPT_DIR/generate-parallel.sh" ]]; then
+            warn "generate-parallel.sh not found, falling back to sequential generation"
+            PARALLEL_FLAG=false
+        else
+            # Extract artifact types
+            ARTIFACT_TYPES=$(echo "$STUDIO_JSON" | python3 -c "
+import sys, json
+artifacts = json.load(sys.stdin)
+types = [a.get('type') for a in artifacts]
+print(' '.join(types))
+")
+
+            # Use parallel generation
+            set +e
+            "$SCRIPT_DIR/generate-parallel.sh" "$NOTEBOOK_ID" $ARTIFACT_TYPES --wait
+            PARALLEL_EXIT=$?
+            set -e
+
+            if [[ $PARALLEL_EXIT -eq 0 ]]; then
+                ARTIFACTS_CREATED=$STUDIO_COUNT
+                info "All artifacts completed"
+            else
+                ARTIFACTS_FAILED=$PARALLEL_EXIT
+                ARTIFACTS_CREATED=$((STUDIO_COUNT - ARTIFACTS_FAILED))
+                warn "Some artifacts failed"
+            fi
+        fi
+    fi
+
+    # Sequential generation (either by choice or as fallback)
+    if [[ "$PARALLEL_FLAG" = false || "$STUDIO_COUNT" -eq 1 ]]; then
+        if [[ "$STUDIO_COUNT" -eq 1 ]]; then
+            info "Generating 1 artifact sequentially..."
+        else
+            info "Generating $STUDIO_COUNT artifacts sequentially..."
+        fi
+
+        # Iterate through studio artifacts using Python
+        # Pass STUDIO_JSON, NOTEBOOK_ID, and SCRIPT_DIR as environment variables
+        STUDIO_RESULT=$(STUDIO_JSON_DATA="$STUDIO_JSON" NOTEBOOK_ID_DATA="$NOTEBOOK_ID" SCRIPT_DIR_DATA="$SCRIPT_DIR" python3 <<'PYEOF'
 import json
 import sys
 import subprocess
@@ -300,9 +348,10 @@ print(f"{artifacts_created}|{artifacts_failed}")
 PYEOF
 )
 
-    # Capture Python output - the last line contains the counts
-    ARTIFACTS_CREATED=$(echo "$STUDIO_RESULT" | tail -1 | cut -d'|' -f1)
-    ARTIFACTS_FAILED=$(echo "$STUDIO_RESULT" | tail -1 | cut -d'|' -f2)
+        # Capture Python output - the last line contains the counts
+        ARTIFACTS_CREATED=$(echo "$STUDIO_RESULT" | tail -1 | cut -d'|' -f1)
+        ARTIFACTS_FAILED=$(echo "$STUDIO_RESULT" | tail -1 | cut -d'|' -f2)
+    fi
 
     info "Artifacts created: $ARTIFACTS_CREATED"
     if [[ $ARTIFACTS_FAILED -gt 0 ]]; then
