@@ -32,5 +32,6 @@ profiles/
 .DS_Store
 Thumbs.db
 
-# Claude Code local settings
-.claude/
+# Claude Code local settings (but allow skills)
+.claude/settings*.json
+.claude/*.json
