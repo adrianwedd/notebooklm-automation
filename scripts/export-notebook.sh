@@ -215,6 +215,18 @@ if [[ "$FORMAT" != "notebooklm" ]]; then
       echo ""
       echo "Obsidian vault: $OBSIDIAN_DIR"
       ;;
+    notion)
+      NOTION_DIR="$OUTPUT_DIR-notion"
+      python3 "$SCRIPT_DIR/../lib/export_notion.py" \
+        "$OUTPUT_DIR" "$NOTION_DIR"
+      echo "Notion file: $NOTION_DIR"
+      ;;
+    anki)
+      ANKI_DIR="$OUTPUT_DIR-anki"
+      python3 "$SCRIPT_DIR/../lib/export_anki.py" \
+        "$OUTPUT_DIR" "$ANKI_DIR"
+      echo "Anki CSV: $ANKI_DIR"
+      ;;
     *)
       echo "Warning: Unknown format: $FORMAT (using default)"
       ;;

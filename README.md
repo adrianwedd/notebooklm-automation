@@ -104,7 +104,7 @@ Export a single notebook by ID or name substring.
 
 **Usage:**
 ```bash
-./scripts/export-notebook.sh <notebook-id-or-name> [output-dir]
+./scripts/export-notebook.sh <notebook-id-or-name> [output-dir] [--format FORMAT]
 ```
 
 **Examples:**
@@ -114,6 +114,21 @@ Export a single notebook by ID or name substring.
 
 # By UUID
 ./scripts/export-notebook.sh "abc-123-def-456" ./exports
+```
+
+### Export Formats
+
+Export notebooks in multiple formats:
+
+```bash
+# Obsidian (vault structure)
+./scripts/export-notebook.sh <notebook-id> ./output --format obsidian
+
+# Notion (single markdown)
+./scripts/export-notebook.sh <notebook-id> ./output --format notion
+
+# Anki (flashcard CSV)
+./scripts/export-notebook.sh <notebook-id> ./output --format anki
 ```
 
 ### export-all.sh
