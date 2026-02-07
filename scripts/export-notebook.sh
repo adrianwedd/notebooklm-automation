@@ -2,10 +2,26 @@
 set -euo pipefail
 
 # Export a NotebookLM notebook to a local directory structure.
-# Usage: ./export-notebook.sh <notebook-id-or-name> [output-dir]
+# Usage: ./export-notebook.sh <notebook-id-or-name> [output-dir] [--format FORMAT]
 
-NOTEBOOK_ARG="${1:?Usage: export-notebook.sh <notebook-id-or-name> [output-dir]}"
+NOTEBOOK_ARG="${1:?Usage: export-notebook.sh <notebook-id-or-name> [output-dir] [--format FORMAT]}"
 BASE_OUTPUT="${2:-./exports}"
+FORMAT="notebooklm"  # default format
+
+# Parse optional format flag
+shift 2 2>/dev/null || shift $#
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --format)
+      FORMAT="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+  esac
+done
 
 slugify() {
   echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//' | head -c 80
@@ -183,6 +199,27 @@ for a in artifacts:
       ;;
   esac
 done
+
+# --- Format conversion ---
+if [[ "$FORMAT" != "notebooklm" ]]; then
+  echo ""
+  echo "Converting to $FORMAT format..."
+
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+  case "$FORMAT" in
+    obsidian)
+      OBSIDIAN_DIR="$OUTPUT_DIR-obsidian"
+      python3 "$SCRIPT_DIR/../lib/export_obsidian.py" \
+        "$OUTPUT_DIR" "$OBSIDIAN_DIR"
+      echo ""
+      echo "Obsidian vault: $OBSIDIAN_DIR"
+      ;;
+    *)
+      echo "Warning: Unknown format: $FORMAT (using default)"
+      ;;
+  esac
+fi
 
 # --- Summary ---
 echo ""
