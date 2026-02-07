@@ -1,5 +1,12 @@
 # NotebookLM Automation
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub last commit](https://img.shields.io/github/last-commit/adrianwedd/notebooklm-automation)](https://github.com/adrianwedd/notebooklm-automation/commits/main)
+[![GitHub issues](https://img.shields.io/github/issues/adrianwedd/notebooklm-automation)](https://github.com/adrianwedd/notebooklm-automation/issues)
+[![GitHub stars](https://img.shields.io/github/stars/adrianwedd/notebooklm-automation)](https://github.com/adrianwedd/notebooklm-automation/stargazers)
+![Bash](https://img.shields.io/badge/bash-%23121011.svg?style=flat&logo=gnu-bash&logoColor=white)
+![Python](https://img.shields.io/badge/python-3670A0?style=flat&logo=python&logoColor=ffdd54)
+
 Automation tools for exporting and interacting with Google NotebookLM notebooks via unofficial APIs.
 
 ## Quick Start

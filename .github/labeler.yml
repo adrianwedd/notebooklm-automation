@@ -1,0 +1,25 @@
+# Auto-label PRs based on changed files
+
+documentation:
+  - '**/*.md'
+  - 'docs/**/*'
+
+scripts:
+  - 'scripts/**/*.sh'
+
+python:
+  - 'lib/**/*.py'
+  - 'requirements*.txt'
+
+templates:
+  - 'templates/**/*.json'
+
+tests:
+  - 'tests/**/*'
+
+github:
+  - '.github/**/*'
+
+dependencies:
+  - 'requirements*.txt'
+  - '**/package.json'
