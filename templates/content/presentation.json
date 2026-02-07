@@ -1,0 +1,13 @@
+{
+  "title": "Presentation: {{presentation_topic}}",
+  "smart_creation": {
+    "enabled": true,
+    "topic": "{{presentation_topic}}",
+    "depth": 12
+  },
+  "studio": [
+    {"type": "slides"},
+    {"type": "mindmap"},
+    {"type": "report"}
+  ]
+}

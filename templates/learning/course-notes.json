@@ -1,0 +1,13 @@
+{
+  "title": "{{course_name}} - Study Notes",
+  "smart_creation": {
+    "enabled": true,
+    "topic": "{{course_name}} tutorial guide",
+    "depth": 10
+  },
+  "studio": [
+    {"type": "quiz"},
+    {"type": "flashcards"},
+    {"type": "report"}
+  ]
+}

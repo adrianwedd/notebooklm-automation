@@ -1,0 +1,12 @@
+{
+  "title": "Podcast Research: {{guest_name}} - {{topic}}",
+  "smart_creation": {
+    "enabled": true,
+    "topic": "{{guest_name}} {{topic}}",
+    "depth": 8
+  },
+  "studio": [
+    {"type": "report"},
+    {"type": "quiz"}
+  ]
+}

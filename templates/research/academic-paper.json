@@ -1,0 +1,14 @@
+{
+  "title": "Research: {{paper_topic}}",
+  "smart_creation": {
+    "enabled": true,
+    "topic": "{{paper_topic}} academic research papers",
+    "depth": 15
+  },
+  "studio": [
+    {"type": "report"},
+    {"type": "mindmap"},
+    {"type": "quiz"},
+    {"type": "data-table"}
+  ]
+}

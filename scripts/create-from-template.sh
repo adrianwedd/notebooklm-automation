@@ -24,16 +24,16 @@ fi
 TEMPLATE_ID="$1"
 shift
 
-# Parse variables
-declare -A VARIABLES
+# Parse variables into JSON using Python
+VARIABLES_JSON="{}"
+VAR_PAIRS=()
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --var)
       # Parse key=value
       if [[ "$2" =~ ^([^=]+)=(.+)$ ]]; then
-        key="${BASH_REMATCH[1]}"
-        value="${BASH_REMATCH[2]}"
-        VARIABLES[$key]="$value"
+        VAR_PAIRS+=("$2")
       else
         echo "Error: Invalid variable format: $2"
         echo "Expected: key=value"
@@ -48,17 +48,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Build variables JSON
-VARIABLES_JSON="{"
-first=true
-for key in "${!VARIABLES[@]}"; do
-  if [ "$first" = false ]; then
-    VARIABLES_JSON+=","
-  fi
-  first=false
-  VARIABLES_JSON+="\"$key\":\"${VARIABLES[$key]}\""
-done
-VARIABLES_JSON+="}"
+# Build variables JSON using Python (avoids bash 4 associative arrays)
+if [ ${#VAR_PAIRS[@]} -gt 0 ]; then
+  VARIABLES_JSON=$(python3 -c "
+import json
+import sys
+pairs = sys.argv[1:]
+variables = {}
+for pair in pairs:
+    key, value = pair.split('=', 1)
+    variables[key] = value
+print(json.dumps(variables))
+" "${VAR_PAIRS[@]}")
+fi
 
 echo "=== Creating Notebook from Template ==="
 echo "Template: $TEMPLATE_ID"
