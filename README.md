@@ -289,6 +289,30 @@ End-to-end automation: create notebook, add sources, generate artifacts from JSO
 }
 ```
 
+### Smart Creation Mode
+
+Instead of manually specifying sources, let the automation research a topic:
+
+```json
+{
+  "title": "Machine Learning Fundamentals",
+  "smart_creation": {
+    "enabled": true,
+    "topic": "machine learning basics",
+    "depth": 10
+  },
+  "studio": [
+    {"type": "quiz"},
+    {"type": "summary"}
+  ]
+}
+```
+
+The automation will:
+1. Search web and Wikipedia for quality sources
+2. Create notebook with discovered sources
+3. Generate requested artifacts
+
 **Features:**
 - Creates notebook from title
 - Adds all sources (with retry logic)

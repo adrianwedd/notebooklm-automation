@@ -167,10 +167,75 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ ! -x "$SCRIPT_DIR/add-sources.sh" ]] && error "Helper script not found or not executable: add-sources.sh"
 [[ ! -x "$SCRIPT_DIR/generate-studio.sh" ]] && error "Helper script not found or not executable: generate-studio.sh"
 
-# Phase 1: Create notebook
-section "Phase 1: Creating Notebook"
-CREATE_OUTPUT=$("$SCRIPT_DIR/create-notebook.sh" "$TITLE" 2>&1) || error "Failed to create notebook"
-NOTEBOOK_ID=$(echo "$CREATE_OUTPUT" | python3 -c "
+# Check for smart creation mode
+SMART_MODE=$(python3 -c "
+import sys, json
+try:
+    with open('$CONFIG_FILE') as f:
+        config = json.load(f)
+    print(config.get('smart_creation', {}).get('enabled', 'false'))
+except:
+    print('false')
+")
+
+if [[ "$SMART_MODE" == "True" || "$SMART_MODE" == "true" ]]; then
+  info "Smart creation mode enabled"
+
+  # Extract smart creation config
+  SMART_TOPIC=$(python3 -c "
+import sys, json
+with open('$CONFIG_FILE') as f:
+    config = json.load(f)
+print(config.get('smart_creation', {}).get('topic', ''))
+")
+
+  SMART_DEPTH=$(python3 -c "
+import sys, json
+with open('$CONFIG_FILE') as f:
+    config = json.load(f)
+print(config.get('smart_creation', {}).get('depth', 5))
+")
+
+  if [[ -z "$SMART_TOPIC" ]]; then
+    error "Smart creation enabled but no topic specified"
+  fi
+
+  section "Smart Creation: Researching '$SMART_TOPIC'"
+
+  # Use research-topic.sh for source discovery
+  info "Searching for sources (depth: $SMART_DEPTH)..."
+
+  # Create temp file for research output
+  RESEARCH_OUTPUT="/tmp/research-$$-output.txt"
+
+  # Run research (creates notebook and adds sources)
+  "$SCRIPT_DIR/research-topic.sh" "$SMART_TOPIC" --depth "$SMART_DEPTH" \
+    2>&1 | tee "$RESEARCH_OUTPUT"
+
+  # Extract notebook ID from research output
+  NOTEBOOK_ID=$(grep "Notebook ID:" "$RESEARCH_OUTPUT" | awk '{print $NF}')
+
+  if [[ -z "$NOTEBOOK_ID" ]]; then
+    error "Failed to create smart notebook"
+  fi
+
+  info "Created notebook: $NOTEBOOK_ID"
+
+  # Extract source count from research output
+  SOURCES_ADDED=$(grep "Final:" "$RESEARCH_OUTPUT" 2>/dev/null | grep -o '[0-9]\+' | head -1 || echo "0")
+  SOURCES_FAILED=0
+
+  rm -f "$RESEARCH_OUTPUT"
+
+  section "Phase 2: Sources Added by Smart Research"
+  info "Sources added: $SOURCES_ADDED"
+else
+  # Normal mode: create notebook and add sources manually
+
+  # Phase 1: Create notebook
+  section "Phase 1: Creating Notebook"
+  CREATE_OUTPUT=$("$SCRIPT_DIR/create-notebook.sh" "$TITLE" 2>&1) || error "Failed to create notebook"
+  NOTEBOOK_ID=$(echo "$CREATE_OUTPUT" | python3 -c "
 import sys, json, re
 
 output = sys.stdin.read()
@@ -194,20 +259,20 @@ if match:
     print(match.group(0))
 ")
 
-[[ -z "$NOTEBOOK_ID" ]] && error "Failed to extract notebook ID from create output"
+  [[ -z "$NOTEBOOK_ID" ]] && error "Failed to extract notebook ID from create output"
 
-info "Notebook created: $NOTEBOOK_ID"
+  info "Notebook created: $NOTEBOOK_ID"
 
-# Phase 2: Add sources
-section "Phase 2: Adding Sources"
-SOURCES_ADDED=0
-SOURCES_FAILED=0
+  # Phase 2: Add sources
+  section "Phase 2: Adding Sources"
+  SOURCES_ADDED=0
+  SOURCES_FAILED=0
 
-SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+  SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
 
-if [[ "$SOURCE_COUNT" -eq 0 ]]; then
+  if [[ "$SOURCE_COUNT" -eq 0 ]]; then
     warn "No sources to add"
-else
+  else
     # Convert sources array to space-separated arguments for add-sources.sh
     # We need to properly quote each source
     ADD_SOURCES_CMD=("$SCRIPT_DIR/add-sources.sh" "$NOTEBOOK_ID")
@@ -237,6 +302,7 @@ else
     if [[ $SOURCES_FAILED -gt 0 ]]; then
         warn "Sources failed: $SOURCES_FAILED"
     fi
+  fi
 fi
 
 # Phase 3: Generate studio artifacts
