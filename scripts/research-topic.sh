@@ -59,10 +59,28 @@ echo ""
 
 # Step 1: Search for sources
 echo "[1/3] Searching for sources..."
-SOURCES_JSON=$(python3 "$SCRIPT_DIR/../lib/web_search.py" "$TOPIC" "$DEPTH")
-SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
 
-echo "  Found: $SOURCE_COUNT sources"
+# Web search
+echo "  Web search..."
+WEB_SOURCES=$(python3 "$SCRIPT_DIR/../lib/web_search.py" "$TOPIC" "$((DEPTH / 2))")
+WEB_COUNT=$(echo "$WEB_SOURCES" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+
+# Wikipedia search
+echo "  Wikipedia search..."
+WIKI_SOURCES=$(python3 "$SCRIPT_DIR/../lib/wikipedia_search.py" "$TOPIC" 2)
+WIKI_COUNT=$(echo "$WIKI_SOURCES" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+
+# Combine sources
+SOURCES_JSON=$(python3 -c "
+import sys, json
+web = $WEB_SOURCES
+wiki = $WIKI_SOURCES
+all_sources = web + wiki
+print(json.dumps(all_sources[:$DEPTH]))  # Limit to depth
+")
+
+SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+echo "  Found: $WEB_COUNT web + $WIKI_COUNT Wikipedia = $SOURCE_COUNT total sources"
 
 # Step 2: Create notebook with sources
 echo "[2/3] Creating notebook..."
