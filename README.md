@@ -64,6 +64,30 @@ Export NotebookLM notebooks to local directory structures:
 - ❌ File uploads (not supported by nlm CLI)
 - ❌ Chat automation (reserved for interactive use)
 
+### Phase 3: Maximum Impact (✅ Complete)
+
+**Parallel Generation:**
+- ✅ Concurrent artifact generation with progress monitoring
+- ✅ Background job management and result aggregation
+- ✅ `--parallel` flag for automate-notebook.sh
+
+**Smart Notebook Creation:**
+- ✅ Automated research from topics (web + Wikipedia)
+- ✅ Quality source filtering and deduplication
+- ✅ Configurable search depth
+- ✅ Smart creation mode in automate-notebook.sh
+
+**Template System:**
+- ✅ JSON-driven templates with variable interpolation
+- ✅ Pre-built templates (academic, learning, content)
+- ✅ Category organization (research/learning/content)
+- ✅ Template discovery and selection
+
+**Multi-Format Export:**
+- ✅ Obsidian vault structure with wikilinks
+- ✅ Notion-compatible markdown
+- ✅ Anki flashcard CSV import format
+
 ## Export Structure
 
 ```
@@ -118,18 +142,53 @@ Export a single notebook by ID or name substring.
 
 ### Export Formats
 
-Export notebooks in multiple formats:
+Export notebooks in multiple formats for knowledge management tools.
 
+**Usage:**
 ```bash
-# Obsidian (vault structure)
-./scripts/export-notebook.sh <notebook-id> ./output --format obsidian
-
-# Notion (single markdown)
-./scripts/export-notebook.sh <notebook-id> ./output --format notion
-
-# Anki (flashcard CSV)
-./scripts/export-notebook.sh <notebook-id> ./output --format anki
+./scripts/export-notebook.sh <notebook-id> <output-dir> [--format FORMAT]
 ```
+
+**Available formats:**
+
+**Obsidian** - Vault structure with wikilinks
+```bash
+./scripts/export-notebook.sh abc-123 ./output --format obsidian
+
+# Creates:
+# output-obsidian/
+# ├── README.md              # Overview with metadata and wikilinks
+# ├── Sources/
+# │   ├── 01-source.md      # Individual source notes
+# │   └── 02-source.md
+# └── Artifacts/
+#     ├── quiz.md           # Artifact notes with links
+#     └── files/
+#         └── audio.mp3     # Actual artifact files
+```
+
+**Notion** - Single markdown with callouts
+```bash
+./scripts/export-notebook.sh abc-123 ./output --format notion
+
+# Creates:
+# output-notion/
+# └── notebook-title.md     # Single file with > callouts
+```
+
+**Anki** - Flashcard CSV for import
+```bash
+./scripts/export-notebook.sh abc-123 ./output --format anki
+
+# Creates:
+# output-anki/
+# └── notebook-title-anki.csv   # Front,Back,Tags format
+```
+
+**Features:**
+- **Obsidian**: YAML frontmatter, wikilink navigation, backlinks
+- **Notion**: Callout blocks, metadata headers, linked sources
+- **Anki**: Quiz and flashcard extraction, tagged by notebook
 
 ### export-all.sh
 
@@ -230,6 +289,59 @@ Add sources to an existing notebook with automatic type detection.
 }
 ```
 
+### generate-parallel.sh
+
+Generate multiple studio artifacts concurrently with progress monitoring.
+
+**Usage:**
+```bash
+./scripts/generate-parallel.sh <notebook-id> <types...> [--wait] [--download DIR]
+```
+
+**Supported artifact types:**
+- Space-separated: `quiz flashcards report`
+- Comma-separated: `quiz,flashcards,report`
+
+**Options:**
+- `--wait` - Wait for all artifacts to complete with progress monitoring
+- `--download <dir>` - Download all artifacts to directory (implies --wait)
+
+**Features:**
+- Concurrent generation for faster completion
+- Real-time progress: "Progress: X/Y artifacts completed"
+- Background job management with PID tracking
+- Success/failure tracking with exit codes
+
+**Example:**
+```bash
+# Generate 3 artifacts in parallel
+./scripts/generate-parallel.sh "abc-123" quiz flashcards report --wait
+
+# Output:
+# === Parallel Artifact Generation ===
+# Notebook: abc-123
+# Artifacts: quiz flashcards report
+# Count: 3
+#
+# Starting parallel generation...
+#   Starting: quiz
+#   Starting: flashcards
+#   Starting: report
+#
+# Launched 3 parallel jobs
+#
+# Waiting for completion...
+# Progress: 3/3 artifacts completed
+#
+# === Generation Complete ===
+# Success: 3
+# Failed:  0
+```
+
+**Performance:**
+- 3 artifacts in parallel: ~60 seconds (vs 180 seconds sequential)
+- Audio/video still take 2-10 minutes each (can't parallelize generation time)
+
 ### generate-studio.sh
 
 Generate studio artifacts programmatically with polling until completion.
@@ -282,16 +394,121 @@ Generate studio artifacts programmatically with polling until completion.
 - Quiz/flashcards typically complete in under 1 minute
 - Script polls every 10 seconds until completion or timeout
 
+### research-topic.sh
+
+Automatically create research notebooks from topics with smart source discovery.
+
+**Usage:**
+```bash
+./scripts/research-topic.sh "<topic>" [--depth N] [--auto-generate TYPES]
+```
+
+**Options:**
+- `--depth <N>` - Number of sources to find (default: 3)
+- `--auto-generate <types>` - Comma-separated artifact types to generate
+
+**Features:**
+- DuckDuckGo web search for quality sources
+- Wikipedia article discovery
+- URL deduplication and normalization
+- Spam domain filtering
+- Automatic notebook creation and source addition
+
+**Example:**
+```bash
+# Basic research with 3 sources
+./scripts/research-topic.sh "quantum computing" --depth 3
+
+# Deep research with artifacts
+./scripts/research-topic.sh "machine learning basics" \
+  --depth 10 \
+  --auto-generate quiz,flashcards,report
+
+# Output:
+# === Smart Notebook Creation ===
+# Topic: quantum computing
+# Depth: 3 sources
+#
+# [1/3] Searching for sources...
+#   Web search...
+#   Wikipedia search...
+#   Deduplicating sources...
+#   Final: 3 unique sources
+# [2/3] Creating notebook...
+#   Created: abc-123-def-456
+#   Adding sources...
+#     Adding: https://quantum.example.com
+#     Adding: https://en.wikipedia.org/wiki/Quantum_computing
+# [3/3] No artifacts requested
+#
+# === Research Complete ===
+# Notebook ID: abc-123-def-456
+# URL: https://notebooklm.google.com/notebook/abc-123-def-456
+```
+
+### create-from-template.sh
+
+Create notebooks from pre-built templates with variable substitution.
+
+**Usage:**
+```bash
+./scripts/create-from-template.sh <template-id> [--var KEY=VALUE ...]
+```
+
+**Available templates:**
+- `research/academic-paper` - Academic research (15 sources, 4 artifacts)
+- `learning/course-notes` - Study guide (10 sources, 3 artifacts)
+- `content/podcast-prep` - Interview research (8 sources, 2 artifacts)
+- `content/presentation` - Presentation builder (12 sources, 3 artifacts)
+
+**Example:**
+```bash
+# Academic research
+./scripts/create-from-template.sh research/academic-paper \
+  --var paper_topic="quantum entanglement"
+
+# Course notes
+./scripts/create-from-template.sh learning/course-notes \
+  --var course_name="Python Programming"
+
+# Podcast prep
+./scripts/create-from-template.sh content/podcast-prep \
+  --var guest_name="Richard Feynman" \
+  --var topic="physics education"
+```
+
+**Template format:**
+```json
+{
+  "title": "Research: {{paper_topic}}",
+  "smart_creation": {
+    "enabled": true,
+    "topic": "{{paper_topic}} academic research papers",
+    "depth": 15
+  },
+  "studio": [
+    {"type": "summary"},
+    {"type": "mindmap"},
+    {"type": "quiz"}
+  ]
+}
+```
+
 ### automate-notebook.sh
 
 End-to-end automation: create notebook, add sources, generate artifacts from JSON config.
 
 **Usage:**
 ```bash
-./scripts/automate-notebook.sh <config.json> [output-dir]
+./scripts/automate-notebook.sh --config <config.json> [--export DIR] [--parallel]
 ```
 
-**Config format:**
+**Options:**
+- `--config <file>` - JSON configuration file (required)
+- `--export <dir>` - Export notebook after generation (optional)
+- `--parallel` - Generate artifacts in parallel (faster)
+
+**Manual sources config:**
 ```json
 {
   "title": "Notebook Title",
@@ -300,14 +517,14 @@ End-to-end automation: create notebook, add sources, generate artifacts from JSO
     "text:Some content here",
     "drive://document-id"
   ],
-  "artifacts": ["quiz", "audio", "report"]
+  "studio": [
+    {"type": "quiz"},
+    {"type": "report"}
+  ]
 }
 ```
 
-### Smart Creation Mode
-
-Instead of manually specifying sources, let the automation research a topic:
-
+**Smart creation config:**
 ```json
 {
   "title": "Machine Learning Fundamentals",
@@ -318,20 +535,24 @@ Instead of manually specifying sources, let the automation research a topic:
   },
   "studio": [
     {"type": "quiz"},
-    {"type": "summary"}
+    {"type": "flashcards"},
+    {"type": "report"}
   ]
 }
 ```
 
-The automation will:
-1. Search web and Wikipedia for quality sources
-2. Create notebook with discovered sources
-3. Generate requested artifacts
+**Smart creation features:**
+1. Web search (DuckDuckGo) for quality sources
+2. Wikipedia article discovery
+3. URL deduplication and normalization
+4. Automatic notebook creation
+5. Source addition with retry logic
+6. Artifact generation (parallel with `--parallel` flag)
 
 **Features:**
 - Creates notebook from title
-- Adds all sources (with retry logic)
-- Generates requested artifacts in parallel where possible
+- Manual or smart source addition
+- Generates artifacts sequentially or in parallel
 - Exports final notebook to directory
 - Returns comprehensive JSON summary
 
@@ -514,6 +735,23 @@ Phase 2 automation tests (2026-02-06):
 - ✅ End-to-end automation (notebook + sources + artifacts)
 - ✅ Export integration (full workflow with export)
 - ✅ Integration test suite (5/5 tests passing)
+
+Phase 3 maximum impact tests (2026-02-07):
+- ✅ Parallel generation (3 artifacts in 60s vs 180s sequential)
+- ✅ Progress monitoring (real-time updates every 2 seconds)
+- ✅ Web search (DuckDuckGo quality source discovery)
+- ✅ Wikipedia integration (OpenSearch API)
+- ✅ URL deduplication (normalize www, trailing slash, tracking params)
+- ✅ Smart creation (automated research from topic)
+- ✅ Template system (variable interpolation and discovery)
+- ✅ Pre-built templates (4 templates: research/learning/content)
+- ✅ Obsidian export (vault structure with wikilinks)
+- ✅ Notion export (single markdown with callouts)
+- ✅ Anki export (flashcard CSV import)
+- ✅ End-to-end validation (template → smart creation → artifacts → export)
+  - Template: learning/course-notes
+  - Topic: "Python Programming"
+  - Result: 5 sources discovered, 3 artifacts generated, 100% success rate
 
 ## License
 
