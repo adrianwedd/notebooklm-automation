@@ -754,6 +754,27 @@ Large notebooks with many artifacts (especially audio/video) can take time:
 
 ## Testing
 
+### Running tests
+
+CI runs no-auth checks only. Locally you can run:
+
+```bash
+# CI-equivalent no-auth checks
+bash -n scripts/*.sh
+shellcheck -x scripts/*.sh
+python3 -m py_compile lib/*.py
+
+bash tests/help-flags-test.sh
+bash tests/dry-run-smoke-test.sh
+```
+
+For a true end-to-end run (requires a real NotebookLM login; creates and deletes test notebooks):
+
+```bash
+nlm login
+./tests/integration-test.sh
+```
+
 Smoke tests verified (2026-02-06):
 - ✅ Authentication (42 cookies extracted)
 - ✅ List notebooks (80 found)

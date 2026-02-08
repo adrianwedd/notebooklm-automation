@@ -123,13 +123,29 @@ Fixes #456
 ### Run Tests Before Committing
 
 ```bash
-# Run all integration tests
+# CI-equivalent no-auth checks (fast)
+bash -n scripts/*.sh
+shellcheck -x scripts/*.sh
+python3 -m py_compile lib/*.py
+
+bash tests/help-flags-test.sh
+bash tests/dry-run-smoke-test.sh
+bash tests/json-tools-test.sh
+bash tests/retry-helper-test.sh
+
+# Integration tests (requires nlm login; creates and deletes notebooks; takes a few minutes)
+nlm login
 ./tests/integration-test.sh
 
 # Test specific functionality
 ./scripts/export-notebook.sh "test-notebook" /tmp/test-export
 ./scripts/automate-notebook.sh --config tests/fixtures/example-config.json
 ```
+
+Integration test notes:
+- By default it creates one notebook and runs live `nlm` operations against it, then deletes it in cleanup.
+- Use `./tests/integration-test.sh --keep-notebooks` to keep notebooks for debugging.
+- `./tests/integration-test.sh --run-export-all` will export all notebooks (slow; maintainer-only).
 
 ### Add Tests for New Features
 
