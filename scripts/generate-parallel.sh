@@ -11,11 +11,17 @@ set -euo pipefail
 NOTEBOOK_ID="${1:?Usage: generate-parallel.sh <notebook-id> <types...> [--wait] [--download dir]}"
 shift
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/retry.sh"
+
 # Parse artifact types and flags
 ARTIFACT_TYPES=()
 WAIT_FLAG=false
 DOWNLOAD_DIR=""
 DRY_RUN=false
+NO_RETRY=false
+STUDIO_EXTRA_ARGS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,6 +42,10 @@ while [[ $# -gt 0 ]]; do
       DRY_RUN=true
       shift
       ;;
+    --no-retry)
+      NO_RETRY=true
+      shift
+      ;;
     --help)
       cat <<EOF
 Usage: generate-parallel.sh <notebook-id> <types...> [options]
@@ -52,6 +62,7 @@ Options:
   --wait              Wait for all artifacts to complete
   --download <dir>    Download all artifacts to directory (implies --wait)
   --dry-run           Print planned actions and exit without creating artifacts
+  --no-retry          Disable retry/backoff for nlm operations
   -h, --help          Show this help message
 
 Examples:
@@ -81,7 +92,10 @@ if [ ${#ARTIFACT_TYPES[@]} -eq 0 ]; then
   exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "$NO_RETRY" == true ]]; then
+  export NLM_NO_RETRY=true
+  STUDIO_EXTRA_ARGS+=(--no-retry)
+fi
 
 if [[ "$DRY_RUN" == true ]]; then
   echo "=== Parallel Artifact Generation (dry-run) ===" >&2
@@ -93,9 +107,17 @@ if [[ "$DRY_RUN" == true ]]; then
   fi
   for artifact_type in "${ARTIFACT_TYPES[@]}"; do
     if [[ "$WAIT_FLAG" == true ]]; then
-      echo "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\" --wait" >&2
+      if [[ "$NO_RETRY" == true ]]; then
+        echo "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\" --wait --no-retry" >&2
+      else
+        echo "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\" --wait" >&2
+      fi
     else
-      echo "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\"" >&2
+      if [[ "$NO_RETRY" == true ]]; then
+        echo "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\" --no-retry" >&2
+      else
+        echo "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\"" >&2
+      fi
     fi
   done
   NLM_NB_ID="$NOTEBOOK_ID" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "dry_run": True}))'
@@ -149,10 +171,10 @@ for artifact_type in "${ARTIFACT_TYPES[@]}"; do
 
   # Launch generate-studio.sh in background
   if [ "$WAIT_FLAG" = true ]; then
-    "$SCRIPT_DIR/generate-studio.sh" "$NOTEBOOK_ID" "$artifact_type" --wait \
+    "$SCRIPT_DIR/generate-studio.sh" "$NOTEBOOK_ID" "$artifact_type" --wait "${STUDIO_EXTRA_ARGS[@]}" \
       > "$OUTPUT_FILE" 2>&1 &
   else
-    "$SCRIPT_DIR/generate-studio.sh" "$NOTEBOOK_ID" "$artifact_type" \
+    "$SCRIPT_DIR/generate-studio.sh" "$NOTEBOOK_ID" "$artifact_type" "${STUDIO_EXTRA_ARGS[@]}" \
       > "$OUTPUT_FILE" 2>&1 &
   fi
 
@@ -226,8 +248,8 @@ except Exception:
       echo "  Downloading: $artifact_type"
       # Note: Download logic depends on nlm CLI support
       # This is a placeholder - actual download may not work for all types
-      nlm download "$artifact_type" "$NOTEBOOK_ID" \
-        -o "$DOWNLOAD_DIR/${artifact_type}" 2>/dev/null || \
+      retry_cmd "nlm download $artifact_type" nlm download "$artifact_type" "$NOTEBOOK_ID" \
+        -o "$DOWNLOAD_DIR/${artifact_type}" 1>/dev/null || \
         echo "    (download not supported for $artifact_type)"
     done
   fi

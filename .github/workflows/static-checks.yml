@@ -18,6 +18,9 @@ jobs:
       - name: ShellCheck
         run: shellcheck -x scripts/*.sh
 
+      - name: Retry helper self-test
+        run: bash tests/retry-helper-test.sh
+
       - name: Python compile
         run: python3 -m py_compile lib/*.py
 

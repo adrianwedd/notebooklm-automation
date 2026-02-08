@@ -4,6 +4,10 @@ set -euo pipefail
 # Batch export all NotebookLM notebooks to a local directory structure.
 # Usage: ./export-all.sh [--output DIR] [--continue-on-error]
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/retry.sh"
+
 show_help() {
   cat <<EOF
 Usage: export-all.sh [options]
@@ -13,6 +17,7 @@ Batch export all NotebookLM notebooks to a local directory structure.
 Options:
   --output <dir>       Output base directory (default: ./exports)
   --continue-on-error  Continue exporting if individual notebooks fail
+  --no-retry           Disable retry/backoff for nlm operations
   -h, --help           Show this help message
 
 Examples:
@@ -25,6 +30,8 @@ EOF
 
 OUTPUT_BASE="./exports"
 CONTINUE_ON_ERROR=false
+NO_RETRY=false
+EXTRA_EXPORT_ARGS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -39,6 +46,10 @@ while [[ $# -gt 0 ]]; do
       CONTINUE_ON_ERROR=true
       shift
       ;;
+    --no-retry)
+      NO_RETRY=true
+      shift
+      ;;
     -*)
       echo "Unknown option: $1" >&2
       exit 1
@@ -51,12 +62,16 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXPORT_SCRIPT="$SCRIPT_DIR/export-notebook.sh"
 
 if [ ! -x "$EXPORT_SCRIPT" ]; then
   echo "Error: export-notebook.sh not found or not executable at $EXPORT_SCRIPT"
   exit 1
+fi
+
+if [[ "$NO_RETRY" == true ]]; then
+  export NLM_NO_RETRY=true
+  EXTRA_EXPORT_ARGS+=(--no-retry)
 fi
 
 echo "=== NotebookLM Batch Export ==="
@@ -66,8 +81,16 @@ echo ""
 
 # Get all notebooks
 echo "Fetching notebook list..."
-NOTEBOOKS=$(nlm notebook list 2>/dev/null)
-TOTAL=$(echo "$NOTEBOOKS" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
+set +e
+NOTEBOOKS=$(retry_cmd "nlm notebook list" nlm notebook list 2>&1)
+LIST_EXIT=$?
+set -e
+if [[ $LIST_EXIT -ne 0 ]]; then
+  echo "Error: nlm notebook list failed:" >&2
+  echo "$NOTEBOOKS" >&2
+  exit 2
+fi
+TOTAL=$(echo "$NOTEBOOKS" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
 
 echo "Found $TOTAL notebooks to export"
 echo ""
@@ -105,7 +128,7 @@ while IFS='|' read -r notebook_id notebook_title; do
   fi
 
   # Run export
-  if "$EXPORT_SCRIPT" "$notebook_id" "$OUTPUT_BASE" 2>&1 | sed 's/^/  /'; then
+  if "$EXPORT_SCRIPT" --id "$notebook_id" --output "$OUTPUT_BASE" "${EXTRA_EXPORT_ARGS[@]}" 2>&1 | sed 's/^/  /'; then
     success=$(<"$TEMP_DIR/success")
     echo "$((success + 1))" > "$TEMP_DIR/success"
     echo "  [✓] Export complete"

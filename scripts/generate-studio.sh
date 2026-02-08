@@ -14,6 +14,7 @@
 #   --download <path>       Download artifact to specified path (implies --wait)
 #   --description <desc>    Description for data-table (required for data-table type)
 #   --dry-run               Print planned action and exit without creating artifacts
+#   --no-retry              Disable retry/backoff for nlm operations
 #   --help                  Show this help message
 #
 # Output:
@@ -40,6 +41,11 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
+
+# Find script directory (same directory as this script)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/retry.sh"
 
 # Error handling
 error() {
@@ -68,6 +74,7 @@ WAIT_FLAG=false
 DOWNLOAD_PATH=""
 DESCRIPTION=""
 DRY_RUN=false
+NO_RETRY=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -93,6 +100,10 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=true
             shift
             ;;
+        --no-retry)
+            NO_RETRY=true
+            shift
+            ;;
         -*)
             error "Unknown option: $1"
             ;;
@@ -108,6 +119,10 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [[ "$NO_RETRY" == true ]]; then
+    export NLM_NO_RETRY=true
+fi
 
 # Validate required arguments
 [[ -z "$NOTEBOOK_ID" ]] && error "Missing required argument: notebook-id"
@@ -142,31 +157,31 @@ info "Creating $ARTIFACT_TYPE artifact for notebook $NOTEBOOK_ID..."
 
 case "$ARTIFACT_TYPE" in
     audio)
-        nlm audio create "$NOTEBOOK_ID" -y >/dev/null 2>&1 || error "Failed to create audio artifact"
+        retry_cmd "nlm audio create" nlm audio create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create audio artifact"
         ;;
     video)
-        nlm video create "$NOTEBOOK_ID" -y >/dev/null 2>&1 || error "Failed to create video artifact"
+        retry_cmd "nlm video create" nlm video create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create video artifact"
         ;;
     report)
-        nlm report create "$NOTEBOOK_ID" -y >/dev/null 2>&1 || error "Failed to create report artifact"
+        retry_cmd "nlm report create" nlm report create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create report artifact"
         ;;
     quiz)
-        nlm quiz create "$NOTEBOOK_ID" -y >/dev/null 2>&1 || error "Failed to create quiz artifact"
+        retry_cmd "nlm quiz create" nlm quiz create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create quiz artifact"
         ;;
     flashcards)
-        nlm flashcards create "$NOTEBOOK_ID" -y >/dev/null 2>&1 || error "Failed to create flashcards artifact"
+        retry_cmd "nlm flashcards create" nlm flashcards create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create flashcards artifact"
         ;;
     mindmap)
-        nlm mindmap create "$NOTEBOOK_ID" -y >/dev/null 2>&1 || error "Failed to create mindmap artifact"
+        retry_cmd "nlm mindmap create" nlm mindmap create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create mindmap artifact"
         ;;
     slides)
-        nlm slides create "$NOTEBOOK_ID" -y >/dev/null 2>&1 || error "Failed to create slides artifact"
+        retry_cmd "nlm slides create" nlm slides create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create slides artifact"
         ;;
     infographic)
-        nlm infographic create "$NOTEBOOK_ID" -y >/dev/null 2>&1 || error "Failed to create infographic artifact"
+        retry_cmd "nlm infographic create" nlm infographic create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create infographic artifact"
         ;;
     data-table)
-        nlm data-table create "$NOTEBOOK_ID" "$DESCRIPTION" -y >/dev/null 2>&1 || error "Failed to create data-table artifact"
+        retry_cmd "nlm data-table create" nlm data-table create "$NOTEBOOK_ID" "$DESCRIPTION" -y >/dev/null || error "Failed to create data-table artifact"
         ;;
 esac
 
@@ -179,7 +194,7 @@ check_status() {
 
     # Get status as JSON
     local status_output
-    status_output=$(nlm status artifacts "$notebook_id" --json 2>/dev/null) || return 1
+    status_output=$(retry_cmd "nlm status artifacts" nlm status artifacts "$notebook_id" --json 2>&1) || return 1
 
     # Use Python to parse JSON and find matching artifact (pass via stdin)
     echo "$status_output" | NLM_ARTIFACT_TYPE="$artifact_type" python3 -c '
@@ -295,17 +310,17 @@ if [[ -n "$DOWNLOAD_PATH" ]]; then
     # Try to download using nlm CLI
     case "$ARTIFACT_TYPE" in
         audio)
-            if nlm download audio "$NOTEBOOK_ID" -o "$DOWNLOAD_PATH" 2>/dev/null; then
+            if retry_cmd "nlm download audio" nlm download audio "$NOTEBOOK_ID" -o "$DOWNLOAD_PATH" 1>/dev/null; then
                 info "Download successful: $DOWNLOAD_PATH"
             else
-                warn "Download command not supported for $ARTIFACT_TYPE (nlm CLI limitation)"
+                warn "Download failed for $ARTIFACT_TYPE (nlm CLI limitation or transient error)"
             fi
             ;;
         video)
-            if nlm download video "$NOTEBOOK_ID" -o "$DOWNLOAD_PATH" 2>/dev/null; then
+            if retry_cmd "nlm download video" nlm download video "$NOTEBOOK_ID" -o "$DOWNLOAD_PATH" 1>/dev/null; then
                 info "Download successful: $DOWNLOAD_PATH"
             else
-                warn "Download command not supported for $ARTIFACT_TYPE (nlm CLI limitation)"
+                warn "Download failed for $ARTIFACT_TYPE (nlm CLI limitation or transient error)"
             fi
             ;;
         *)

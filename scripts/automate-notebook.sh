@@ -3,13 +3,14 @@
 # automate-notebook.sh - End-to-end NotebookLM automation from JSON config
 #
 # Usage:
-#   automate-notebook.sh --config <file> [--export <dir>] [--parallel] [--dry-run] [--help]
+#   automate-notebook.sh --config <file> [--export <dir>] [--parallel] [--dry-run] [--no-retry] [--help]
 #
 # Arguments:
 #   --config <file>    Path to JSON config file (required)
 #   --export <dir>     Export notebook to directory after completion (optional)
 #   --parallel         Generate artifacts in parallel (faster)
 #   --dry-run          Print planned actions and exit without making changes
+#   --no-retry         Disable retry/backoff for nlm operations
 #
 # Config format:
 #   {
@@ -74,6 +75,7 @@ CONFIG_FILE=""
 EXPORT_DIR=""
 PARALLEL_FLAG=false
 DRY_RUN=false
+NO_RETRY=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -98,6 +100,10 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=true
             shift
             ;;
+        --no-retry)
+            NO_RETRY=true
+            shift
+            ;;
         *)
             error "Unknown argument: $1. Try --help for usage."
             ;;
@@ -107,6 +113,10 @@ done
 # Validate arguments
 [[ -z "$CONFIG_FILE" ]] && error "Missing required argument: --config <file>"
 [[ ! -f "$CONFIG_FILE" ]] && error "Config file not found: $CONFIG_FILE"
+
+if [[ "$NO_RETRY" == true ]]; then
+    export NLM_NO_RETRY=true
+fi
 
 # Validate JSON
 python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$CONFIG_FILE" 2>/dev/null || error "Invalid JSON in config file: $CONFIG_FILE"
@@ -220,13 +230,23 @@ print(config.get("smart_creation", {}).get("depth", 5))
         info "  ./scripts/research-topic.sh \"$SMART_TOPIC\" --depth \"$SMART_DEPTH\""
     else
         info "Would create notebook:"
-        info "  ./scripts/create-notebook.sh \"$TITLE\""
+        if [[ "$NO_RETRY" == true ]]; then
+            info "  ./scripts/create-notebook.sh \"$TITLE\" --no-retry"
+        else
+            info "  ./scripts/create-notebook.sh \"$TITLE\""
+        fi
 
         SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
         if [[ "$SOURCE_COUNT" -gt 0 ]]; then
             info "Would add sources ($SOURCE_COUNT):"
             while IFS= read -r source; do
-                [[ -n "$source" ]] && info "  ./scripts/add-sources.sh <notebook-id> \"$source\""
+                if [[ -n "$source" ]]; then
+                    if [[ "$NO_RETRY" == true ]]; then
+                        info "  ./scripts/add-sources.sh <notebook-id> --no-retry \"$source\""
+                    else
+                        info "  ./scripts/add-sources.sh <notebook-id> \"$source\""
+                    fi
+                fi
             done < <(echo "$SOURCES_JSON" | python3 -c 'import sys, json; [print(s) for s in json.load(sys.stdin)]')
         else
             warn "No sources to add"
@@ -238,7 +258,11 @@ print(config.get("smart_creation", {}).get("depth", 5))
         info "Would generate artifacts ($STUDIO_COUNT):"
         if [[ "$PARALLEL_FLAG" == true && "$STUDIO_COUNT" -gt 1 ]]; then
             IFS=' ' read -ra ARTIFACT_TYPES <<< "$(echo "$STUDIO_JSON" | python3 -c 'import sys, json; print(\" \".join([a.get(\"type\", \"\") for a in json.load(sys.stdin)]))')"
-            info "  ./scripts/generate-parallel.sh <notebook-id> ${ARTIFACT_TYPES[*]} --wait"
+            if [[ "$NO_RETRY" == true ]]; then
+                info "  ./scripts/generate-parallel.sh <notebook-id> ${ARTIFACT_TYPES[*]} --wait --no-retry"
+            else
+                info "  ./scripts/generate-parallel.sh <notebook-id> ${ARTIFACT_TYPES[*]} --wait"
+            fi
         else
             echo "$STUDIO_JSON" | python3 -c '
 import sys, json
@@ -251,9 +275,17 @@ for a in json.load(sys.stdin):
         print(f"{t}")
 ' | while IFS='|' read -r atype flag desc; do
                 if [[ "$atype" == "data-table" && "$flag" == "--description" ]]; then
-                    info "  ./scripts/generate-studio.sh <notebook-id> \"$atype\" --wait --description \"$desc\""
+                    if [[ "$NO_RETRY" == true ]]; then
+                        info "  ./scripts/generate-studio.sh <notebook-id> \"$atype\" --wait --description \"$desc\" --no-retry"
+                    else
+                        info "  ./scripts/generate-studio.sh <notebook-id> \"$atype\" --wait --description \"$desc\""
+                    fi
                 else
-                    info "  ./scripts/generate-studio.sh <notebook-id> \"$atype\" --wait"
+                    if [[ "$NO_RETRY" == true ]]; then
+                        info "  ./scripts/generate-studio.sh <notebook-id> \"$atype\" --wait --no-retry"
+                    else
+                        info "  ./scripts/generate-studio.sh <notebook-id> \"$atype\" --wait"
+                    fi
                 fi
             done
         fi
@@ -263,7 +295,11 @@ for a in json.load(sys.stdin):
 
     if [[ -n "$EXPORT_DIR" ]]; then
         info "Would export notebook:"
-        info "  ./scripts/export-notebook.sh <notebook-id> --output \"$EXPORT_DIR\""
+        if [[ "$NO_RETRY" == true ]]; then
+            info "  ./scripts/export-notebook.sh <notebook-id> --output \"$EXPORT_DIR\" --no-retry"
+        else
+            info "  ./scripts/export-notebook.sh <notebook-id> --output \"$EXPORT_DIR\""
+        fi
     fi
 
     # Emit a minimal JSON summary for automation.
@@ -339,7 +375,11 @@ else
 
   # Phase 1: Create notebook
   section "Phase 1: Creating Notebook"
-  CREATE_OUTPUT=$("$SCRIPT_DIR/create-notebook.sh" "$TITLE" 2>&1) || error "Failed to create notebook"
+  CREATE_ARGS=("$SCRIPT_DIR/create-notebook.sh" "$TITLE")
+  if [[ "$NO_RETRY" == true ]]; then
+    CREATE_ARGS+=(--no-retry)
+  fi
+  CREATE_OUTPUT=$("${CREATE_ARGS[@]}" 2>&1) || error "Failed to create notebook"
   NOTEBOOK_ID=$(echo "$CREATE_OUTPUT" | python3 -c '
 import sys, json, re
 output = sys.stdin.read()
@@ -379,6 +419,9 @@ if match:
     # Convert sources array to space-separated arguments for add-sources.sh
     # We need to properly quote each source
     ADD_SOURCES_CMD=("$SCRIPT_DIR/add-sources.sh" "$NOTEBOOK_ID")
+    if [[ "$NO_RETRY" == true ]]; then
+        ADD_SOURCES_CMD+=(--no-retry)
+    fi
 
     # Use Python to iterate sources and build command
     while IFS= read -r source; do
@@ -440,7 +483,11 @@ print(" ".join(types))
 
             # Use parallel generation
             set +e
-            "$SCRIPT_DIR/generate-parallel.sh" "$NOTEBOOK_ID" "${ARTIFACT_TYPES[@]}" --wait
+            PARALLEL_ARGS=("$SCRIPT_DIR/generate-parallel.sh" "$NOTEBOOK_ID" "${ARTIFACT_TYPES[@]}" --wait)
+            if [[ "$NO_RETRY" == true ]]; then
+                PARALLEL_ARGS+=(--no-retry)
+            fi
+            "${PARALLEL_ARGS[@]}"
             PARALLEL_EXIT=$?
             set -e
 
@@ -494,6 +541,8 @@ for idx, artifact in enumerate(studio, 1):
 
     # Build command
     cmd = [f"{script_dir}/generate-studio.sh", notebook_id, artifact_type, "--wait"]
+    if os.environ.get("NLM_NO_RETRY") == "true":
+        cmd.append("--no-retry")
 
     # Add description if present (required for data-table)
     if 'description' in artifact:
@@ -539,7 +588,11 @@ if [[ -n "$EXPORT_DIR" ]]; then
         warn "export-notebook.sh not found, skipping export"
     else
         info "Exporting to: $EXPORT_DIR"
-        "$SCRIPT_DIR/export-notebook.sh" "$NOTEBOOK_ID" "$EXPORT_DIR" 2>&1 || warn "Export failed"
+        EXPORT_ARGS=("$SCRIPT_DIR/export-notebook.sh" --id "$NOTEBOOK_ID" --output "$EXPORT_DIR")
+        if [[ "$NO_RETRY" == true ]]; then
+            EXPORT_ARGS+=(--no-retry)
+        fi
+        "${EXPORT_ARGS[@]}" 2>&1 || warn "Export failed"
         info "Export complete"
     fi
 fi

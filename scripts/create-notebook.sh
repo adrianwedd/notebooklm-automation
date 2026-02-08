@@ -2,12 +2,19 @@
 set -euo pipefail
 
 # Create a NotebookLM notebook
-# Usage: ./create-notebook.sh <title>
+# Usage: ./create-notebook.sh <title> [--no-retry]
 
-# Show help if requested
-if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
-  cat <<EOF
-Usage: create-notebook.sh <title>
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/retry.sh"
+
+NO_RETRY=false
+
+while [[ $# -gt 0 ]]; do
+  case "${1:-}" in
+    --help|-h)
+      cat <<EOF
+Usage: create-notebook.sh <title> [options]
 
 Creates a new NotebookLM notebook with the specified title.
 
@@ -15,6 +22,41 @@ Arguments:
   title    The title for the new notebook
 
 Options:
+  --no-retry   Disable retry/backoff for nlm operations
+  -h, --help   Show this help message
+
+Example:
+  ./create-notebook.sh "My Research Notes"
+
+Note: To add sources to a notebook, use add-sources.sh
+EOF
+      exit 0
+      ;;
+    --no-retry)
+      NO_RETRY=true
+      shift
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [[ "$NO_RETRY" == true ]]; then
+  export NLM_NO_RETRY=true
+fi
+
+if [[ $# -lt 1 ]]; then
+  cat <<EOF
+Usage: create-notebook.sh <title> [options]
+
+Creates a new NotebookLM notebook with the specified title.
+
+Arguments:
+  title    The title for the new notebook
+
+Options:
+  --no-retry    Disable retry/backoff for nlm operations
   -h, --help    Show this help message
 
 Example:
@@ -22,17 +64,17 @@ Example:
 
 Note: To add sources to a notebook, use add-sources.sh
 EOF
-  exit 0
+  exit 1
 fi
 
-TITLE="${1:?Usage: create-notebook.sh <title>}"
+TITLE="$1"
 
 echo "Creating notebook: $TITLE"
 
 # Create notebook
 # Temporarily disable errexit to capture exit code correctly
 set +e
-NOTEBOOK_JSON=$(nlm create notebook "$TITLE" 2>&1)
+NOTEBOOK_JSON=$(retry_cmd "nlm create notebook" nlm create notebook "$TITLE" 2>&1)
 EXIT_CODE=$?
 set -e
 

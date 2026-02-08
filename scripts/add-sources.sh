@@ -16,6 +16,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Find script directory (same directory as this script)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/retry.sh"
+
 # Show help
 show_help() {
     cat << EOF
@@ -25,6 +30,7 @@ Add sources to an existing NotebookLM notebook.
 
 Options:
   --dry-run    Print actions and exit without adding sources
+  --no-retry   Disable retry/backoff for nlm operations
   -h, --help   Show this help message
 
 Arguments:
@@ -52,16 +58,31 @@ Exit codes:
 EOF
 }
 
-# Check for help flag
-if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
-    show_help
-    exit 0
-fi
-
 DRY_RUN=false
-if [[ "${1:-}" == "--dry-run" ]]; then
-    DRY_RUN=true
-    shift
+NO_RETRY=false
+
+while [[ $# -gt 0 ]]; do
+    case "${1:-}" in
+        --help|-h)
+            show_help
+            exit 0
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --no-retry)
+            NO_RETRY=true
+            shift
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+if [[ "$NO_RETRY" == true ]]; then
+    export NLM_NO_RETRY=true
 fi
 
 # Check arguments
@@ -84,7 +105,7 @@ if [[ "$DRY_RUN" == true ]]; then
 fi
 
 # Verify notebook exists
-if ! nlm list sources "$NOTEBOOK_ID" &>/dev/null; then
+if ! retry_cmd "nlm list sources (verify notebook)" nlm list sources "$NOTEBOOK_ID" >/dev/null; then
     echo -e "${RED}Error: Notebook '$NOTEBOOK_ID' not found${NC}" >&2
     exit 2
 fi
@@ -105,7 +126,7 @@ add_source() {
     # Detect source type
     if [[ "$source" =~ ^https?:// ]]; then
         echo -e "${YELLOW}Adding URL source:${NC} $source" >&2
-        if nlm add url "$NOTEBOOK_ID" "$source" 2>>"$ERROR_LOG"; then
+        if retry_cmd "nlm add url" nlm add url "$NOTEBOOK_ID" "$source" 2>>"$ERROR_LOG"; then
             ((SOURCES_ADDED++))
             echo -e "${GREEN}✓ Added URL source${NC}" >&2
         else
@@ -117,7 +138,7 @@ add_source() {
         # Remove "text:" prefix
         local text_content="${source#text:}"
         echo -e "${YELLOW}Adding text source${NC}" >&2
-        if nlm add text "$NOTEBOOK_ID" "$text_content" 2>>"$ERROR_LOG"; then
+        if retry_cmd "nlm add text" nlm add text "$NOTEBOOK_ID" "$text_content" 2>>"$ERROR_LOG"; then
             ((SOURCES_ADDED++))
             echo -e "${GREEN}✓ Added text source${NC}" >&2
         else
@@ -129,7 +150,7 @@ add_source() {
         # Remove "drive://" prefix
         local drive_id="${source#drive://}"
         echo -e "${YELLOW}Adding Drive source:${NC} $drive_id" >&2
-        if nlm add drive "$NOTEBOOK_ID" "$drive_id" 2>>"$ERROR_LOG"; then
+        if retry_cmd "nlm add drive" nlm add drive "$NOTEBOOK_ID" "$drive_id" 2>>"$ERROR_LOG"; then
             ((SOURCES_ADDED++))
             echo -e "${GREEN}✓ Added Drive source${NC}" >&2
         else
