@@ -26,7 +26,7 @@ python3 "$ROOT_DIR/lib/template_engine.py" render "$tmpl" >"$tmpdir/out" 2>"$err
 rc=$?
 set -e
 [[ $rc -ne 0 ]] || fail "expected non-zero exit for missing vars"
-rg -q "Missing template variables: name, topic|Missing template variables: topic, name" "$err" || fail "missing vars message not found"
+grep -Eq "Missing template variables: (name, topic|topic, name)" "$err" || fail "missing vars message not found"
 
 # Providing vars should succeed and leave no placeholders.
 vars="$tmpdir/vars.json"
@@ -39,4 +39,3 @@ python3 "$ROOT_DIR/lib/template_engine.py" render "$tmpl" "$vars" | python3 -c '
 python3 "$ROOT_DIR/lib/template_engine.py" render "$tmpl" --allow-unresolved | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "{{name}}" in d["title"]'
 
 echo "template engine tests: ok"
-
