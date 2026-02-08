@@ -129,6 +129,22 @@ exports/
 
 ## Scripts
 
+## Schemas
+
+This repository includes JSON Schemas for config and template validation:
+
+- `schemas/config.schema.json`
+- `schemas/template.schema.json`
+
+Validate a file locally with:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install jsonschema
+./scripts/validate-json.sh --schema schemas/config.schema.json --file my-config.json
+```
+
 ### export-notebook.sh
 
 Export a single notebook by ID or name substring.

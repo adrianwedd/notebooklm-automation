@@ -6,6 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATES_DIR="$SCRIPT_DIR/../templates"
+SCHEMA_FILE="$SCRIPT_DIR/../schemas/config.schema.json"
 
 show_help() {
   cat <<EOF
@@ -102,6 +103,25 @@ fi
 # Render template
 echo "Rendering template..."
 CONFIG_JSON=$(echo "$VARIABLES_JSON" | python3 "$SCRIPT_DIR/../lib/template_engine.py" render "$TEMPLATE_FILE")
+
+# Validate rendered config (if validator + schema are present)
+if [[ -x "$SCRIPT_DIR/validate-json.sh" && -f "$SCHEMA_FILE" ]]; then
+  TMP_VALIDATE=$(mktemp -t nlm-rendered.XXXXXX)
+  trap 'rm -f "$TMP_VALIDATE"' EXIT
+  echo "$CONFIG_JSON" > "$TMP_VALIDATE"
+  set +e
+  "$SCRIPT_DIR/validate-json.sh" --schema "$SCHEMA_FILE" --file "$TMP_VALIDATE" >/dev/null
+  SCHEMA_EXIT=$?
+  set -e
+  if [[ $SCHEMA_EXIT -eq 1 ]]; then
+    echo "Error: Rendered config failed schema validation" >&2
+    exit 1
+  elif [[ $SCHEMA_EXIT -eq 2 ]]; then
+    echo "Warning: Schema validation skipped (missing python dependency 'jsonschema'). See README Schemas section." >&2
+  fi
+  rm -f "$TMP_VALIDATE"
+  trap - EXIT
+fi
 
 # Save to temp file
 TEMP_CONFIG=$(mktemp -t nlm-template.XXXXXX)

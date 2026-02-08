@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NotebookLM Automation Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sources": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "studio": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/studioItem" }
+    },
+    "smart_creation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "topic": { "type": "string" },
+        "depth": { "type": "integer", "minimum": 1 }
+      }
+    }
+  },
+  "definitions": {
+    "studioItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "audio",
+            "video",
+            "report",
+            "quiz",
+            "flashcards",
+            "mindmap",
+            "slides",
+            "infographic",
+            "data-table"
+          ]
+        },
+        "description": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "const": "data-table" } }
+          },
+          "then": { "required": ["description"] }
+        }
+      ]
+    }
+  }
+}
