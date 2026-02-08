@@ -8,12 +8,69 @@ set -euo pipefail
 #   ./generate-parallel.sh abc-123 audio quiz report
 #   ./generate-parallel.sh abc-123 audio,quiz,report --wait --download ./artifacts
 
-NOTEBOOK_ID="${1:?Usage: generate-parallel.sh <notebook-id> <types...> [--wait] [--download dir]}"
-shift
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/retry.sh"
+
+JSON_OUTPUT=true
+QUIET=false
+# shellcheck disable=SC2034
+VERBOSE=false
+
+log_info() {
+  if [[ "$QUIET" != true ]]; then
+    echo "$1" >&2
+  fi
+}
+
+log_warn() {
+  echo "$1" >&2
+}
+
+debug() {
+  if [[ "$VERBOSE" == true && "$QUIET" != true ]]; then
+    echo "Debug: $1" >&2
+  fi
+}
+
+show_help() {
+  cat <<EOF
+Usage: generate-parallel.sh <notebook-id> <types...> [options]
+
+Generate multiple studio artifacts in parallel.
+
+Arguments:
+  notebook-id    Notebook ID
+  types          Artifact types (space or comma-separated)
+                 audio, video, report, quiz, flashcards, mindmap,
+                 slides, infographic, data-table
+
+Options:
+  --json              Emit JSON summary on stdout (default)
+  --quiet             Suppress non-critical logs
+  --verbose           Print additional diagnostics
+  --wait              Wait for all artifacts to complete
+  --download <dir>    Download all artifacts to directory (implies --wait)
+  --dry-run           Print planned actions and exit without creating artifacts
+  --no-retry          Disable retry/backoff for nlm operations
+  -h, --help          Show this help message
+
+Examples:
+  # Generate 3 artifacts in parallel
+  ./generate-parallel.sh abc-123 audio quiz report --wait
+
+  # Generate and download
+  ./generate-parallel.sh abc-123 audio,video --download ./artifacts
+EOF
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  show_help
+  exit 0
+fi
+
+NOTEBOOK_ID="${1:?Usage: generate-parallel.sh <notebook-id> <types...> [--wait] [--download dir]}"
+shift
 
 # Parse artifact types and flags
 ARTIFACT_TYPES=()
@@ -25,6 +82,18 @@ STUDIO_EXTRA_ARGS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --json)
+      JSON_OUTPUT=true
+      shift
+      ;;
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    --verbose)
+      VERBOSE=true
+      shift
+      ;;
     --wait)
       WAIT_FLAG=true
       shift
@@ -47,31 +116,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --help)
-      cat <<EOF
-Usage: generate-parallel.sh <notebook-id> <types...> [options]
-
-Generate multiple studio artifacts in parallel.
-
-Arguments:
-  notebook-id    Notebook ID
-  types          Artifact types (space or comma-separated)
-                 audio, video, report, quiz, flashcards, mindmap,
-                 slides, infographic, data-table
-
-Options:
-  --wait              Wait for all artifacts to complete
-  --download <dir>    Download all artifacts to directory (implies --wait)
-  --dry-run           Print planned actions and exit without creating artifacts
-  --no-retry          Disable retry/backoff for nlm operations
-  -h, --help          Show this help message
-
-Examples:
-  # Generate 3 artifacts in parallel
-  ./generate-parallel.sh abc-123 audio quiz report --wait
-
-  # Generate and download
-  ./generate-parallel.sh abc-123 audio,video --download ./artifacts
-EOF
+      show_help
       exit 0
       ;;
     -h)
@@ -98,37 +143,39 @@ if [[ "$NO_RETRY" == true ]]; then
 fi
 
 if [[ "$DRY_RUN" == true ]]; then
-  echo "=== Parallel Artifact Generation (dry-run) ===" >&2
-  echo "Notebook: $NOTEBOOK_ID" >&2
-  echo "Artifacts: ${ARTIFACT_TYPES[*]}" >&2
-  echo "Wait: $WAIT_FLAG" >&2
+  log_info "=== Parallel Artifact Generation (dry-run) ==="
+  log_info "Notebook: $NOTEBOOK_ID"
+  log_info "Artifacts: ${ARTIFACT_TYPES[*]}"
+  log_info "Wait: $WAIT_FLAG"
   if [[ -n "$DOWNLOAD_DIR" ]]; then
-    echo "Download dir: $DOWNLOAD_DIR" >&2
+    log_info "Download dir: $DOWNLOAD_DIR"
   fi
   for artifact_type in "${ARTIFACT_TYPES[@]}"; do
     if [[ "$WAIT_FLAG" == true ]]; then
       if [[ "$NO_RETRY" == true ]]; then
-        echo "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\" --wait --no-retry" >&2
+        log_info "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\" --wait --no-retry"
       else
-        echo "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\" --wait" >&2
+        log_info "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\" --wait"
       fi
     else
       if [[ "$NO_RETRY" == true ]]; then
-        echo "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\" --no-retry" >&2
+        log_info "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\" --no-retry"
       else
-        echo "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\"" >&2
+        log_info "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\""
       fi
     fi
   done
-  NLM_NB_ID="$NOTEBOOK_ID" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "dry_run": True}))'
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    NLM_NB_ID="$NOTEBOOK_ID" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "dry_run": True}))'
+  fi
   exit 0
 fi
 
-echo "=== Parallel Artifact Generation ==="
-echo "Notebook: $NOTEBOOK_ID"
-echo "Artifacts: ${ARTIFACT_TYPES[*]}"
-echo "Count: ${#ARTIFACT_TYPES[@]}"
-echo ""
+log_info "=== Parallel Artifact Generation ==="
+log_info "Notebook: $NOTEBOOK_ID"
+log_info "Artifacts: ${ARTIFACT_TYPES[*]}"
+log_info "Count: ${#ARTIFACT_TYPES[@]}"
+log_info ""
 
 # Track background jobs
 declare -a PIDS
@@ -153,21 +200,23 @@ monitor_progress() {
       fi
     done
 
-    echo -ne "\rProgress: $completed/$total artifacts completed"
+    if [[ "$QUIET" != true ]]; then
+      echo -ne "\rProgress: $completed/$total artifacts completed" >&2
+    fi
     sleep 2
   done
 
-  echo "" # New line after progress
+  echo "" >&2 # New line after progress
 }
 
 # Generate artifacts in parallel
-echo "Starting parallel generation..."
+log_info "Starting parallel generation..."
 for artifact_type in "${ARTIFACT_TYPES[@]}"; do
   OUTPUT_FILE="${NLM_TMPDIR}/generate-${artifact_type}.json"
   OUTPUT_FILES+=("$OUTPUT_FILE")
   TYPES_RUNNING+=("$artifact_type")
 
-  echo "  Starting: $artifact_type"
+  log_info "  Starting: $artifact_type"
 
   # Launch generate-studio.sh in background
   if [ "$WAIT_FLAG" = true ]; then
@@ -181,14 +230,14 @@ for artifact_type in "${ARTIFACT_TYPES[@]}"; do
   PIDS+=($!)
 done
 
-echo ""
-echo "Launched ${#PIDS[@]} parallel jobs"
-echo ""
+log_info ""
+log_info "Launched ${#PIDS[@]} parallel jobs"
+log_info ""
 
 # Wait for all jobs if requested
 if [ "$WAIT_FLAG" = true ]; then
-  echo "Waiting for completion..."
-  echo ""
+  log_info "Waiting for completion..."
+  log_info ""
 
   # Monitor progress in background
   monitor_progress "${PIDS[@]}" &
@@ -208,14 +257,18 @@ if [ "$WAIT_FLAG" = true ]; then
 
   SUCCESS_COUNT=$(( ${#PIDS[@]} - FAILED_COUNT ))
 
-  echo ""
-  echo "=== Generation Complete ==="
-  echo "Success: $SUCCESS_COUNT"
-  echo "Failed:  $FAILED_COUNT"
-  echo ""
+  log_info ""
+  log_info "=== Generation Complete ==="
+  log_info "Success: $SUCCESS_COUNT"
+  log_info "Failed:  $FAILED_COUNT"
+  log_info ""
 
   # Aggregate results
-  echo "Results:"
+  RESULTS_TMP=$(mktemp -t nlm-parallel-results.XXXXXX)
+  trap 'rm -rf "$NLM_TMPDIR"; rm -f "$RESULTS_TMP"' EXIT
+  : >"$RESULTS_TMP"
+
+  log_info "Results:"
   for i in "${!OUTPUT_FILES[@]}"; do
     artifact_type=${TYPES_RUNNING[$i]}
     output_file=${OUTPUT_FILES[$i]}
@@ -235,30 +288,68 @@ except Exception:
 ' 2>/dev/null || echo "unknown")
 
       echo "  $artifact_type: $ARTIFACT_ID"
+      echo "${artifact_type}|${ARTIFACT_ID}" >>"$RESULTS_TMP"
     fi
   done
 
   # Download if requested
   if [ -n "$DOWNLOAD_DIR" ]; then
-    echo ""
-    echo "Downloading artifacts to: $DOWNLOAD_DIR"
+    log_info ""
+    log_info "Downloading artifacts to: $DOWNLOAD_DIR"
     mkdir -p "$DOWNLOAD_DIR"
 
     for artifact_type in "${TYPES_RUNNING[@]}"; do
-      echo "  Downloading: $artifact_type"
+      log_info "  Downloading: $artifact_type"
       # Note: Download logic depends on nlm CLI support
       # This is a placeholder - actual download may not work for all types
       retry_cmd "nlm download $artifact_type" nlm download "$artifact_type" "$NOTEBOOK_ID" \
         -o "$DOWNLOAD_DIR/${artifact_type}" 1>/dev/null || \
-        echo "    (download not supported for $artifact_type)"
+        log_warn "    (download not supported for $artifact_type)"
     done
+  fi
+
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    NLM_NB_ID="$NOTEBOOK_ID" NLM_OK="$SUCCESS_COUNT" NLM_FAIL="$FAILED_COUNT" NLM_WAIT="true" NLM_DOWNLOAD="${DOWNLOAD_DIR:-}" python3 - "$RESULTS_TMP" <<'PY'
+import json
+import os
+import sys
+
+results_file = sys.argv[1]
+artifacts = []
+with open(results_file, "r", encoding="utf-8") as f:
+  for line in f:
+    line = line.strip()
+    if not line:
+      continue
+    atype, aid = line.split("|", 1)
+    artifacts.append({"type": atype, "artifact_id": aid})
+
+print(json.dumps({
+  "notebook_id": os.environ["NLM_NB_ID"],
+  "wait": True,
+  "successful": int(os.environ["NLM_OK"]),
+  "failed": int(os.environ["NLM_FAIL"]),
+  "download_dir": os.environ.get("NLM_DOWNLOAD") or None,
+  "artifacts": artifacts,
+}))
+PY
   fi
 
   exit $FAILED_COUNT
 else
-  echo "Background jobs launched (not waiting)"
-  echo "Job PIDs: ${PIDS[*]}"
-  echo ""
-  echo "Monitor with: jobs -l"
-  echo "Wait for all: wait ${PIDS[*]}"
+  log_info "Background jobs launched (not waiting)"
+  log_info "Job PIDs: ${PIDS[*]}"
+  log_info ""
+  log_info "Monitor with: jobs -l"
+  log_info "Wait for all: wait ${PIDS[*]}"
+
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    PIDS_JOINED="${PIDS[*]}"
+    TYPES_JOINED="${ARTIFACT_TYPES[*]}"
+    NLM_NB_ID="$NOTEBOOK_ID" NLM_PIDS="$PIDS_JOINED" NLM_TYPES="$TYPES_JOINED" python3 -c '
+import json, os
+pids = [p for p in os.environ.get("NLM_PIDS","").split() if p]
+types = [t for t in os.environ.get("NLM_TYPES","").split() if t]
+print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "wait": False, "pids": pids, "artifact_types": types}))'
+  fi
 fi

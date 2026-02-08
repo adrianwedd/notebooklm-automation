@@ -27,6 +27,9 @@ jobs:
       - name: JSON tools self-test
         run: bash tests/json-tools-test.sh
 
+      - name: Help flags self-test
+        run: bash tests/help-flags-test.sh
+
       - name: Python compile
         run: python3 -m py_compile lib/*.py
 

@@ -8,7 +8,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/retry.sh"
 
+JSON_OUTPUT=true
+QUIET=false
+VERBOSE=false
 NO_RETRY=false
+
+log_info() {
+  if [[ "$QUIET" != true ]]; then
+    echo "$1" >&2
+  fi
+}
+
+log_error() {
+  echo "$1" >&2
+}
+
+debug() {
+  if [[ "$VERBOSE" == true && "$QUIET" != true ]]; then
+    echo "Debug: $1" >&2
+  fi
+}
 
 while [[ $# -gt 0 ]]; do
   case "${1:-}" in
@@ -22,6 +41,9 @@ Arguments:
   title    The title for the new notebook
 
 Options:
+  --json       Emit JSON result on stdout (default)
+  --quiet      Suppress non-critical logs
+  --verbose    Print additional diagnostics
   --no-retry   Disable retry/backoff for nlm operations
   -h, --help   Show this help message
 
@@ -31,6 +53,18 @@ Example:
 Note: To add sources to a notebook, use add-sources.sh
 EOF
       exit 0
+      ;;
+    --json)
+      JSON_OUTPUT=true
+      shift
+      ;;
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    --verbose)
+      VERBOSE=true
+      shift
       ;;
     --no-retry)
       NO_RETRY=true
@@ -56,6 +90,9 @@ Arguments:
   title    The title for the new notebook
 
 Options:
+  --json       Emit JSON result on stdout (default)
+  --quiet      Suppress non-critical logs
+  --verbose    Print additional diagnostics
   --no-retry    Disable retry/backoff for nlm operations
   -h, --help    Show this help message
 
@@ -69,7 +106,7 @@ fi
 
 TITLE="$1"
 
-echo "Creating notebook: $TITLE"
+log_info "Creating notebook: $TITLE"
 
 # Create notebook
 # Temporarily disable errexit to capture exit code correctly
@@ -79,8 +116,8 @@ EXIT_CODE=$?
 set -e
 
 if [ $EXIT_CODE -ne 0 ]; then
-  echo "Error: Failed to create notebook"
-  echo "$NOTEBOOK_JSON"
+  log_error "Error: Failed to create notebook"
+  log_error "$NOTEBOOK_JSON"
   exit 1
 fi
 
@@ -105,16 +142,17 @@ except Exception:
 ' 2>/dev/null)
 
 if [ -z "$NOTEBOOK_ID" ]; then
-  echo "Error: Could not extract notebook ID from response:"
-  echo "$NOTEBOOK_JSON"
+  log_error "Error: Could not extract notebook ID from response:"
+  log_error "$NOTEBOOK_JSON"
   exit 1
 fi
 
-echo "✓ Created notebook: $NOTEBOOK_ID"
-echo "  Title: $TITLE"
+log_info "✓ Created notebook: $NOTEBOOK_ID"
+log_info "  Title: $TITLE"
 
 # Output JSON result with proper escaping
-NLM_NB_ID="$NOTEBOOK_ID" NLM_TITLE="$TITLE" python3 -c '
+if [[ "$JSON_OUTPUT" == true ]]; then
+  NLM_NB_ID="$NOTEBOOK_ID" NLM_TITLE="$TITLE" python3 -c '
 import json, os
 print(json.dumps({
     "id": os.environ["NLM_NB_ID"],
@@ -122,3 +160,4 @@ print(json.dumps({
     "sources_added": 0
 }, indent=2))
 '
+fi

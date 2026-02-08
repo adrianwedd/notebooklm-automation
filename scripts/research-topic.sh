@@ -4,17 +4,81 @@ set -euo pipefail
 # Smart notebook creation from topic research
 # Usage: ./research-topic.sh "<topic>" [--depth N] [--auto-generate types] [--no-retry]
 
-TOPIC="${1:?Usage: research-topic.sh <topic> [options]}"
-shift
-
 DEPTH=3
 AUTO_GENERATE=""
 NO_RETRY=false
+JSON_OUTPUT=true
+QUIET=false
+VERBOSE=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+log_info() {
+  if [[ "$QUIET" != true ]]; then
+    echo "$1" >&2
+  fi
+}
+
+log_warn() {
+  echo "$1" >&2
+}
+
+debug() {
+  if [[ "$VERBOSE" == true && "$QUIET" != true ]]; then
+    echo "Debug: $1" >&2
+  fi
+}
+
+show_help() {
+  cat <<EOF
+Usage: research-topic.sh <topic> [options]
+
+Automatically create a research notebook on a topic.
+
+Arguments:
+  topic          Topic to research (e.g., "quantum computing")
+
+Options:
+  --json                Emit JSON summary on stdout (default)
+  --quiet               Suppress non-critical logs
+  --verbose             Print additional diagnostics
+  --depth <N>           Number of sources to find (default: 3)
+  --auto-generate <types>  Comma-separated artifact types to generate
+  --no-retry            Disable retry/backoff for nlm operations
+  -h, --help             Show this help message
+
+Examples:
+  # Basic research
+  ./research-topic.sh "quantum computing"
+
+  # Deep research with artifacts
+  ./research-topic.sh "machine learning basics" --depth 10 \\
+    --auto-generate quiz,report
+EOF
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  show_help
+  exit 0
+fi
+
+TOPIC="${1:?Usage: research-topic.sh <topic> [options]}"
+shift
 
 # Parse options
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --json)
+      JSON_OUTPUT=true
+      shift
+      ;;
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    --verbose)
+      VERBOSE=true
+      shift
+      ;;
     --depth)
       DEPTH="$2"
       shift 2
@@ -27,28 +91,8 @@ while [[ $# -gt 0 ]]; do
       NO_RETRY=true
       shift
       ;;
-    --help)
-      cat <<EOF
-Usage: research-topic.sh <topic> [options]
-
-Automatically create a research notebook on a topic.
-
-Arguments:
-  topic          Topic to research (e.g., "quantum computing")
-
-Options:
-  --depth <N>           Number of sources to find (default: 3)
-  --auto-generate <types>  Comma-separated artifact types to generate
-  --no-retry            Disable retry/backoff for nlm operations
-
-Examples:
-  # Basic research
-  ./research-topic.sh "quantum computing"
-
-  # Deep research with artifacts
-  ./research-topic.sh "machine learning basics" --depth 10 \
-    --auto-generate quiz,report
-EOF
+    --help|-h)
+      show_help
       exit 0
       ;;
     *)
@@ -97,20 +141,20 @@ PY
 
 check_research_deps
 
-echo "=== Smart Notebook Creation ==="
-echo "Topic: $TOPIC"
-echo "Depth: $DEPTH sources"
-echo ""
+log_info "=== Smart Notebook Creation ==="
+log_info "Topic: $TOPIC"
+log_info "Depth: $DEPTH sources"
+log_info ""
 
 # Step 1: Search for sources
-echo "[1/3] Searching for sources..."
+log_info "[1/3] Searching for sources..."
 
 # Web search
-echo "  Web search..."
+log_info "  Web search..."
 WEB_SOURCES=$(python3 "$SCRIPT_DIR/../lib/web_search.py" "$TOPIC" "$((DEPTH / 2))")
 
 # Wikipedia search
-echo "  Wikipedia search..."
+log_info "  Wikipedia search..."
 WIKI_SOURCES=$(python3 "$SCRIPT_DIR/../lib/wikipedia_search.py" "$TOPIC" 2)
 
 # Combine sources
@@ -133,7 +177,7 @@ PYEOF
 )
 
 # Deduplicate
-echo "  Deduplicating sources..."
+log_info "  Deduplicating sources..."
 SOURCES_JSON=$(echo "$SOURCES_JSON" | python3 "$SCRIPT_DIR/../lib/deduplicate_sources.py" -)
 
 # Final trim to depth
@@ -145,10 +189,10 @@ print(json.dumps(sources[:depth]))
 ')
 
 SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len)
-echo "  Final: $SOURCE_COUNT unique sources"
+log_info "  Final: $SOURCE_COUNT unique sources"
 
 # Step 2: Create notebook with sources
-echo "[2/3] Creating notebook..."
+log_info "[2/3] Creating notebook..."
 NOTEBOOK_TITLE="Research: $TOPIC"
 NOTEBOOK_ID=$("$SCRIPT_DIR/create-notebook.sh" "$NOTEBOOK_TITLE" 2>&1 | \
   python3 -c '
@@ -164,10 +208,10 @@ except Exception:
     print("", file=sys.stderr)
 ')
 
-echo "  Created: $NOTEBOOK_ID"
+log_info "  Created: $NOTEBOOK_ID"
 
 # Add sources
-echo "  Adding sources..."
+log_info "  Adding sources..."
 SOURCE_URLS=$(echo "$SOURCES_JSON" | python3 -c '
 import sys, json
 sources = json.load(sys.stdin)
@@ -176,36 +220,48 @@ for s in sources:
 ')
 
 while IFS= read -r url; do
-  echo "    Adding: $url"
+  log_info "    Adding: $url"
   set +e
   "$SCRIPT_DIR/add-sources.sh" "$NOTEBOOK_ID" "${NO_RETRY_FLAG[@]}" "$url" 2>&1 | sed 's/^/      /' >&2
   ADD_RC=$?
   set -e
   if [[ $ADD_RC -ne 0 ]]; then
-    echo "      (failed, continuing)" >&2
+    log_warn "      (failed, continuing)"
   fi
 done <<< "$SOURCE_URLS"
 
 # Step 3: Generate artifacts if requested
 if [ -n "$AUTO_GENERATE" ]; then
-  echo "[3/3] Generating artifacts: $AUTO_GENERATE"
+  log_info "[3/3] Generating artifacts: $AUTO_GENERATE"
   IFS=',' read -ra TYPES <<< "$AUTO_GENERATE"
 
   for artifact_type in "${TYPES[@]}"; do
-    echo "  Generating: $artifact_type"
+    log_info "  Generating: $artifact_type"
     set +e
     "$SCRIPT_DIR/generate-studio.sh" "$NOTEBOOK_ID" "$artifact_type" --wait "${NO_RETRY_FLAG[@]}" 2>&1 | sed 's/^/    /' >&2
     GEN_RC=$?
     set -e
     if [[ $GEN_RC -ne 0 ]]; then
-      echo "    (failed)" >&2
+      log_warn "    (failed)"
     fi
   done
 else
-  echo "[3/3] No artifacts requested"
+  log_info "[3/3] No artifacts requested"
 fi
 
-echo ""
-echo "=== Research Complete ==="
-echo "Notebook ID: $NOTEBOOK_ID"
-echo "URL: https://notebooklm.google.com/notebook/$NOTEBOOK_ID"
+log_info ""
+log_info "=== Research Complete ==="
+log_info "Notebook ID: $NOTEBOOK_ID"
+log_info "URL: https://notebooklm.google.com/notebook/$NOTEBOOK_ID"
+
+if [[ "$JSON_OUTPUT" == true ]]; then
+  NLM_TOPIC="$TOPIC" NLM_NB_ID="$NOTEBOOK_ID" NLM_DEPTH="$DEPTH" NLM_SOURCES="$SOURCE_COUNT" NLM_AUTO="$AUTO_GENERATE" python3 -c '
+import json, os
+print(json.dumps({
+  "topic": os.environ["NLM_TOPIC"],
+  "notebook_id": os.environ["NLM_NB_ID"],
+  "depth": int(os.environ["NLM_DEPTH"]),
+  "sources": int(os.environ["NLM_SOURCES"]),
+  "auto_generate": os.environ.get("NLM_AUTO", "")
+}))'
+fi

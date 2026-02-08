@@ -8,6 +8,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/retry.sh"
 
+JSON_OUTPUT=true
+QUIET=false
+VERBOSE=false
+
+log_info() {
+  if [[ "$QUIET" != true ]]; then
+    echo "$1" >&2
+  fi
+}
+
+log_warn() {
+  echo "$1" >&2
+}
+
+debug() {
+  if [[ "$VERBOSE" == true && "$QUIET" != true ]]; then
+    echo "Debug: $1" >&2
+  fi
+}
+
 show_help() {
   cat <<EOF
 Usage: export-all.sh [options]
@@ -15,6 +35,9 @@ Usage: export-all.sh [options]
 Batch export all NotebookLM notebooks to a local directory structure.
 
 Options:
+  --json              Emit JSON summary on stdout (default)
+  --quiet             Suppress non-critical logs
+  --verbose           Print additional diagnostics
   --output <dir>       Output base directory (default: ./exports)
   --continue-on-error  Continue exporting if individual notebooks fail
   --no-retry           Disable retry/backoff for nlm operations
@@ -37,6 +60,18 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)
       show_help
+      ;;
+    --json)
+      JSON_OUTPUT=true
+      shift
+      ;;
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    --verbose)
+      VERBOSE=true
+      shift
       ;;
     --output)
       OUTPUT_BASE="$2"
@@ -74,13 +109,17 @@ if [[ "$NO_RETRY" == true ]]; then
   EXTRA_EXPORT_ARGS+=(--no-retry)
 fi
 
-echo "=== NotebookLM Batch Export ==="
-echo "Output directory: $OUTPUT_BASE"
-echo "Continue on error: $CONTINUE_ON_ERROR"
-echo ""
+if [[ "$QUIET" == true ]]; then
+  EXTRA_EXPORT_ARGS+=(--quiet)
+fi
+
+log_info "=== NotebookLM Batch Export ==="
+log_info "Output directory: $OUTPUT_BASE"
+log_info "Continue on error: $CONTINUE_ON_ERROR"
+log_info ""
 
 # Get all notebooks
-echo "Fetching notebook list..."
+log_info "Fetching notebook list..."
 set +e
 NOTEBOOKS=$(retry_cmd "nlm notebook list" nlm notebook list 2>&1)
 LIST_EXIT=$?
@@ -92,8 +131,8 @@ if [[ $LIST_EXIT -ne 0 ]]; then
 fi
 TOTAL=$(echo "$NOTEBOOKS" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len 2>/dev/null || echo 0)
 
-echo "Found $TOTAL notebooks to export"
-echo ""
+log_info "Found $TOTAL notebooks to export"
+log_info ""
 
 # Create temp files for counters (to survive subshell)
 TEMP_DIR=$(mktemp -d)
@@ -109,8 +148,8 @@ while IFS='|' read -r notebook_id notebook_title; do
   export_count=$((export_count + 1))
 
   # Display progress
-  echo "[$export_count/$TOTAL] Exporting: $notebook_title"
-  echo "  ID: $notebook_id"
+  log_info "[$export_count/$TOTAL] Exporting: $notebook_title"
+  log_info "  ID: $notebook_id"
 
   # Check if already exported (skip to avoid re-downloading)
   slugified=$(echo "$notebook_title" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//' | head -c 80)
@@ -120,30 +159,30 @@ while IFS='|' read -r notebook_id notebook_title; do
 
   export_dir="$OUTPUT_BASE/$slugified"
   if [ -d "$export_dir" ] && [ -f "$export_dir/metadata.json" ]; then
-    echo "  [↷] Already exported, skipping"
+    log_info "  [↷] Already exported, skipping"
     skipped=$(<"$TEMP_DIR/skipped")
     echo "$((skipped + 1))" > "$TEMP_DIR/skipped"
-    echo ""
+    log_info ""
     continue
   fi
 
   # Run export
-  if "$EXPORT_SCRIPT" --id "$notebook_id" --output "$OUTPUT_BASE" "${EXTRA_EXPORT_ARGS[@]}" 2>&1 | sed 's/^/  /'; then
+  if "$EXPORT_SCRIPT" --id "$notebook_id" --output "$OUTPUT_BASE" "${EXTRA_EXPORT_ARGS[@]}" 2>&1 | sed 's/^/  /' >&2; then
     success=$(<"$TEMP_DIR/success")
     echo "$((success + 1))" > "$TEMP_DIR/success"
-    echo "  [✓] Export complete"
+    log_info "  [✓] Export complete"
   else
     error=$(<"$TEMP_DIR/error")
     echo "$((error + 1))" > "$TEMP_DIR/error"
-    echo "  [✗] Export failed"
+    log_warn "  [✗] Export failed"
     if [ "$CONTINUE_ON_ERROR" = false ]; then
-      echo ""
-      echo "Export failed. Use --continue-on-error to skip failures."
+      log_info ""
+      log_warn "Export failed. Use --continue-on-error to skip failures."
       exit 1
     fi
   fi
 
-  echo ""
+  log_info ""
 done < <(echo "$NOTEBOOKS" | python3 -c '
 import sys, json
 notebooks = json.load(sys.stdin)
@@ -157,10 +196,22 @@ error_count=$(<"$TEMP_DIR/error")
 skipped_count=$(<"$TEMP_DIR/skipped")
 
 # Final summary
-echo "=== Export Complete ==="
-echo "Total notebooks:  $TOTAL"
-echo "Successful:       $success_count"
-echo "Errors:           $error_count"
-echo "Skipped:          $skipped_count"
-echo ""
-du -sh "$OUTPUT_BASE" 2>/dev/null | awk '{print "Total size:       " $1}' || echo "Total size:       (unknown)"
+log_info "=== Export Complete ==="
+log_info "Total notebooks:  $TOTAL"
+log_info "Successful:       $success_count"
+log_info "Errors:           $error_count"
+log_info "Skipped:          $skipped_count"
+log_info ""
+du -sh "$OUTPUT_BASE" 2>/dev/null | awk '{print "Total size:       " $1}' >&2 || log_warn "Total size:       (unknown)"
+
+if [[ "$JSON_OUTPUT" == true ]]; then
+  NLM_OUT="$OUTPUT_BASE" NLM_TOTAL="$TOTAL" NLM_OK="$success_count" NLM_ERR="$error_count" NLM_SKIPPED="$skipped_count" python3 -c '
+import json, os
+print(json.dumps({
+  "output_base": os.environ["NLM_OUT"],
+  "total": int(os.environ["NLM_TOTAL"]),
+  "successful": int(os.environ["NLM_OK"]),
+  "errors": int(os.environ["NLM_ERR"]),
+  "skipped": int(os.environ["NLM_SKIPPED"])
+}))'
+fi

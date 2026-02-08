@@ -12,6 +12,9 @@ Usage: validate-json.sh --schema <schema.json> --file <input.json>
 Validate a JSON file against a JSON Schema. Prints validation errors to stderr.
 
 Options:
+  --json           Emit JSON summary on stdout (default)
+  --quiet          Suppress non-critical logs
+  --verbose        Print additional diagnostics
   --schema <path>   Path to JSON Schema file
   --file <path>     Path to JSON file to validate
   -h, --help        Show this help message
@@ -24,12 +27,33 @@ EOF
 
 SCHEMA=""
 FILE=""
+JSON_OUTPUT=true
+QUIET=false
+VERBOSE=false
+
+debug() {
+  if [[ "$VERBOSE" == true && "$QUIET" != true ]]; then
+    echo "Debug: $1" >&2
+  fi
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)
       show_help
       exit 0
+      ;;
+    --json)
+      JSON_OUTPUT=true
+      shift
+      ;;
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    --verbose)
+      VERBOSE=true
+      shift
       ;;
     --schema)
       [[ -z "${2:-}" ]] && { echo "Error: --schema requires an argument" >&2; exit 2; }
@@ -84,7 +108,14 @@ except jsonschema.ValidationError as e:
     if e.path:
         print("At:", "/".join(str(p) for p in e.path), file=sys.stderr)
     sys.exit(1)
-
-print("ok")
 PY
 
+if [[ "$JSON_OUTPUT" == true ]]; then
+  NLM_SCHEMA="$SCHEMA" NLM_FILE="$FILE" python3 -c '
+import json, os
+print(json.dumps({"ok": True, "schema": os.environ["NLM_SCHEMA"], "file": os.environ["NLM_FILE"]}))'
+else
+  if [[ "$QUIET" != true ]]; then
+    echo "ok" >&2
+  fi
+fi

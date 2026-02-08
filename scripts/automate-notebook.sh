@@ -3,7 +3,7 @@
 # automate-notebook.sh - End-to-end NotebookLM automation from JSON config
 #
 # Usage:
-#   automate-notebook.sh --config <file> [--export <dir>] [--parallel] [--dry-run] [--no-retry] [--help]
+#   automate-notebook.sh --config <file> [--export <dir>] [--parallel] [--dry-run] [--no-retry] [--json] [--quiet] [--verbose] [--help]
 #
 # Arguments:
 #   --config <file>    Path to JSON config file (required)
@@ -11,6 +11,9 @@
 #   --parallel         Generate artifacts in parallel (faster)
 #   --dry-run          Print planned actions and exit without making changes
 #   --no-retry         Disable retry/backoff for nlm operations
+#   --json             Emit JSON summary on stdout (default)
+#   --quiet            Suppress non-critical logs
+#   --verbose          Print additional diagnostics
 #
 # Config format:
 #   {
@@ -50,7 +53,9 @@ error() {
 }
 
 info() {
-    echo -e "${GREEN}$1${NC}" >&2
+    if [[ "${QUIET:-false}" != true ]]; then
+        echo -e "${GREEN}$1${NC}" >&2
+    fi
 }
 
 warn() {
@@ -58,7 +63,15 @@ warn() {
 }
 
 section() {
-    echo -e "${BLUE}==== $1 ====${NC}" >&2
+    if [[ "${QUIET:-false}" != true ]]; then
+        echo -e "${BLUE}==== $1 ====${NC}" >&2
+    fi
+}
+
+debug() {
+    if [[ "${VERBOSE:-false}" == true ]]; then
+        echo -e "${YELLOW}Debug:${NC} $1" >&2
+    fi
 }
 
 # Find script directory (same directory as this script)
@@ -76,6 +89,9 @@ EXPORT_DIR=""
 PARALLEL_FLAG=false
 DRY_RUN=false
 NO_RETRY=false
+JSON_OUTPUT=true
+QUIET=false
+VERBOSE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -102,6 +118,18 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-retry)
             NO_RETRY=true
+            shift
+            ;;
+        --json)
+            JSON_OUTPUT=true
+            shift
+            ;;
+        --quiet)
+            QUIET=true
+            shift
+            ;;
+        --verbose)
+            VERBOSE=true
             shift
             ;;
         *)
@@ -307,7 +335,9 @@ for a in json.load(sys.stdin):
     fi
 
     # Emit a minimal JSON summary for automation.
-    python3 -c 'import json; print(json.dumps({"dry_run": True}))'
+    if [[ "$JSON_OUTPUT" == true ]]; then
+        python3 -c 'import json; print(json.dumps({"dry_run": True}))'
+    fi
     exit 0
 fi
 
@@ -634,6 +664,7 @@ info "Notebook ID: $NOTEBOOK_ID"
 info "Notebook URL: $NOTEBOOK_URL"
 
 # Output JSON summary
+if [[ "$JSON_OUTPUT" == true ]]; then
 NOTEBOOK_ID_DATA="$NOTEBOOK_ID" TITLE_DATA="$TITLE" NOTEBOOK_URL_DATA="$NOTEBOOK_URL" SOURCES_ADDED_DATA="$SOURCES_ADDED" SOURCES_FAILED_DATA="$SOURCES_FAILED" ARTIFACTS_CREATED_DATA="$ARTIFACTS_CREATED" ARTIFACTS_FAILED_DATA="$ARTIFACTS_FAILED" python3 <<'PYEOF'
 import json
 import os
@@ -648,3 +679,4 @@ print(json.dumps({
     'artifacts_failed': int(os.environ['ARTIFACTS_FAILED_DATA'])
 }, indent=2))
 PYEOF
+fi
