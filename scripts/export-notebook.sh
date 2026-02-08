@@ -4,6 +4,10 @@ set -euo pipefail
 # Export a NotebookLM notebook to a local directory structure.
 # Usage: ./export-notebook.sh <notebook-id-or-name> [--output DIR] [--format FORMAT] [--match MODE] [--dry-run]
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/retry.sh"
+
 show_help() {
   cat <<EOF
 Usage: export-notebook.sh <notebook-id-or-name> [options]
@@ -20,6 +24,7 @@ Options:
   --id <uuid>        Explicit notebook UUID (disables name matching)
   --name <string>    Explicit notebook name query (disables UUID parsing of positional arg)
   --dry-run          Print planned export actions and exit without downloading
+  --no-retry         Disable retry/backoff for nlm operations
   -h, --help         Show this help message
 
 Examples:
@@ -39,6 +44,7 @@ DRY_RUN=false
 MATCH_MODE="contains"
 EXPLICIT_ID=""
 EXPLICIT_NAME=""
+NO_RETRY=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -72,6 +78,10 @@ while [[ $# -gt 0 ]]; do
       DRY_RUN=true
       shift
       ;;
+    --no-retry)
+      NO_RETRY=true
+      shift
+      ;;
     -*)
       echo "Unknown option: $1" >&2
       exit 1
@@ -87,6 +97,10 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$NO_RETRY" == true ]]; then
+  export NLM_NO_RETRY=true
+fi
 
 if [[ -n "$EXPLICIT_ID" && -n "$EXPLICIT_NAME" ]]; then
   echo "Error: --id and --name are mutually exclusive" >&2
@@ -138,7 +152,7 @@ if [[ -z "$NOTEBOOK_ID" ]]; then
 
     echo "Resolving notebook by name: $NOTEBOOK_QUERY (match: $MATCH_MODE)"
     set +e
-    NOTEBOOKS_JSON=$(nlm notebook list 2>&1)
+    NOTEBOOKS_JSON=$(retry_cmd "nlm notebook list" nlm notebook list 2>&1)
     LIST_EXIT=$?
     set -e
     if [[ $LIST_EXIT -ne 0 ]]; then
@@ -183,7 +197,7 @@ echo "Notebook ID: $NOTEBOOK_ID"
 
 # --- Get notebook metadata ---
 set +e
-NOTEBOOKS_JSON=$(nlm notebook list 2>&1)
+NOTEBOOKS_JSON=$(retry_cmd "nlm notebook list" nlm notebook list 2>&1)
 LIST_EXIT=$?
 set -e
 if [[ $LIST_EXIT -ne 0 ]]; then
@@ -232,7 +246,7 @@ echo "  [+] metadata.json"
 # --- Export sources ---
 echo "  Exporting sources..."
 set +e
-SOURCES=$(nlm source list "$NOTEBOOK_ID" 2>&1)
+SOURCES=$(retry_cmd "nlm source list" nlm source list "$NOTEBOOK_ID" 2>&1)
 SOURCES_EXIT=$?
 set -e
 if [[ $SOURCES_EXIT -ne 0 ]]; then
@@ -253,7 +267,7 @@ for s in sources:
 ' 2>/dev/null | while IFS='|' read -r src_id src_title _src_type; do
   safe_name=$(echo "$src_title" | sed 's/[^a-zA-Z0-9._-]/_/g' | head -c 100)
   content_file="$OUTPUT_DIR/sources/${safe_name}.md"
-  if nlm content source "$src_id" -o "$content_file" 2>/dev/null; then
+  if retry_cmd "nlm content source" nlm content source "$src_id" -o "$content_file"; then
     if [ -s "$content_file" ]; then
       echo "  [+] sources/$safe_name.md"
     else
@@ -275,7 +289,15 @@ echo "[]" > "$OUTPUT_DIR/chat/index.json"
 
 # --- Export notes ---
 echo "  Exporting notes..."
-NOTES_OUTPUT=$(nlm note list "$NOTEBOOK_ID" 2>&1)
+set +e
+NOTES_OUTPUT=$(retry_cmd "nlm note list" nlm note list "$NOTEBOOK_ID" 2>&1)
+NOTES_EXIT=$?
+set -e
+if [[ $NOTES_EXIT -ne 0 ]]; then
+  echo "  [!] nlm note list failed; continuing with empty notes list" >&2
+  echo "$NOTES_OUTPUT" >&2
+  NOTES_OUTPUT="[]"
+fi
 if echo "$NOTES_OUTPUT" | python3 -c 'import sys, json; json.load(sys.stdin)' 2>/dev/null; then
   echo "$NOTES_OUTPUT" > "$OUTPUT_DIR/notes/index.json"
   NOTE_COUNT=$(echo "$NOTES_OUTPUT" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
@@ -302,7 +324,7 @@ fi
 # --- Export studio artifacts ---
 echo "  Exporting studio artifacts..."
 set +e
-ARTIFACTS=$(nlm list artifacts "$NOTEBOOK_ID" 2>&1)
+ARTIFACTS=$(retry_cmd "nlm list artifacts" nlm list artifacts "$NOTEBOOK_ID" 2>&1)
 ARTIFACTS_EXIT=$?
 set -e
 if [[ $ARTIFACTS_EXIT -ne 0 ]]; then
@@ -316,7 +338,7 @@ echo "  [+] studio/manifest.json ($ARTIFACT_COUNT artifacts)"
 
 download_artifact() {
   local atype="$1" aid="$2" outpath="$3"
-  if nlm download "$atype" "$NOTEBOOK_ID" --id "$aid" -o "$outpath" --no-progress 2>/dev/null; then
+  if retry_cmd "nlm download $atype" nlm download "$atype" "$NOTEBOOK_ID" --id "$aid" -o "$outpath" --no-progress 1>/dev/null; then
     if [ -f "$outpath" ] && [ -s "$outpath" ]; then
       local size_bytes
       size_bytes=$(wc -c <"$outpath" | tr -d ' ')
