@@ -3,12 +3,13 @@
 # automate-notebook.sh - End-to-end NotebookLM automation from JSON config
 #
 # Usage:
-#   automate-notebook.sh --config <file> [--export <dir>] [--parallel] [--help]
+#   automate-notebook.sh --config <file> [--export <dir>] [--parallel] [--dry-run] [--help]
 #
 # Arguments:
 #   --config <file>    Path to JSON config file (required)
 #   --export <dir>     Export notebook to directory after completion (optional)
 #   --parallel         Generate artifacts in parallel (faster)
+#   --dry-run          Print planned actions and exit without making changes
 #
 # Config format:
 #   {
@@ -69,6 +70,7 @@ show_help() {
 CONFIG_FILE=""
 EXPORT_DIR=""
 PARALLEL_FLAG=false
+DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -87,6 +89,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --parallel)
             PARALLEL_FLAG=true
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN=true
             shift
             ;;
         *)
@@ -158,6 +164,9 @@ info "Config loaded successfully"
 info "  Title: $TITLE"
 info "  Sources: $(echo "$SOURCES_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')"
 info "  Studio artifacts: $(echo "$STUDIO_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')"
+if [[ "$DRY_RUN" == true ]]; then
+    warn "Dry-run mode enabled: no changes will be made."
+fi
 
 # Find script directory (same directory as this script)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -166,6 +175,88 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ ! -x "$SCRIPT_DIR/create-notebook.sh" ]] && error "Helper script not found or not executable: create-notebook.sh"
 [[ ! -x "$SCRIPT_DIR/add-sources.sh" ]] && error "Helper script not found or not executable: add-sources.sh"
 [[ ! -x "$SCRIPT_DIR/generate-studio.sh" ]] && error "Helper script not found or not executable: generate-studio.sh"
+
+if [[ "$DRY_RUN" == true ]]; then
+    section "Dry Run Plan"
+
+    # Smart creation preview
+    SMART_MODE=$(NLM_CONFIG="$CONFIG_FILE" python3 -c '
+import os, json
+try:
+    with open(os.environ["NLM_CONFIG"]) as f:
+        config = json.load(f)
+    print(config.get("smart_creation", {}).get("enabled", "false"))
+except Exception:
+    print("false")
+')
+
+    if [[ "$SMART_MODE" == "True" || "$SMART_MODE" == "true" ]]; then
+        SMART_TOPIC=$(NLM_CONFIG="$CONFIG_FILE" python3 -c '
+import os, json
+with open(os.environ["NLM_CONFIG"]) as f:
+    config = json.load(f)
+print(config.get("smart_creation", {}).get("topic", ""))
+')
+        SMART_DEPTH=$(NLM_CONFIG="$CONFIG_FILE" python3 -c '
+import os, json
+with open(os.environ["NLM_CONFIG"]) as f:
+    config = json.load(f)
+print(config.get("smart_creation", {}).get("depth", 5))
+')
+        info "Would run smart creation:"
+        info "  ./scripts/research-topic.sh \"$SMART_TOPIC\" --depth \"$SMART_DEPTH\""
+    else
+        info "Would create notebook:"
+        info "  ./scripts/create-notebook.sh \"$TITLE\""
+
+        SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
+        if [[ "$SOURCE_COUNT" -gt 0 ]]; then
+            info "Would add sources ($SOURCE_COUNT):"
+            while IFS= read -r source; do
+                [[ -n "$source" ]] && info "  ./scripts/add-sources.sh <notebook-id> \"$source\""
+            done < <(echo "$SOURCES_JSON" | python3 -c 'import sys, json; [print(s) for s in json.load(sys.stdin)]')
+        else
+            warn "No sources to add"
+        fi
+    fi
+
+    STUDIO_COUNT=$(echo "$STUDIO_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
+    if [[ "$STUDIO_COUNT" -gt 0 ]]; then
+        info "Would generate artifacts ($STUDIO_COUNT):"
+        if [[ "$PARALLEL_FLAG" == true && "$STUDIO_COUNT" -gt 1 ]]; then
+            IFS=' ' read -ra ARTIFACT_TYPES <<< "$(echo "$STUDIO_JSON" | python3 -c 'import sys, json; print(\" \".join([a.get(\"type\", \"\") for a in json.load(sys.stdin)]))')"
+            info "  ./scripts/generate-parallel.sh <notebook-id> ${ARTIFACT_TYPES[*]} --wait"
+        else
+            echo "$STUDIO_JSON" | python3 -c '
+import sys, json
+for a in json.load(sys.stdin):
+    t = a.get("type")
+    d = a.get("description")
+    if t == "data-table" and d:
+        print(f"{t}|--description|{d}")
+    else:
+        print(f"{t}")
+' | while IFS='|' read -r atype flag desc; do
+                if [[ "$atype" == "data-table" && "$flag" == "--description" ]]; then
+                    info "  ./scripts/generate-studio.sh <notebook-id> \"$atype\" --wait --description \"$desc\""
+                else
+                    info "  ./scripts/generate-studio.sh <notebook-id> \"$atype\" --wait"
+                fi
+            done
+        fi
+    else
+        warn "No studio artifacts to generate"
+    fi
+
+    if [[ -n "$EXPORT_DIR" ]]; then
+        info "Would export notebook:"
+        info "  ./scripts/export-notebook.sh <notebook-id> --output \"$EXPORT_DIR\""
+    fi
+
+    # Emit a minimal JSON summary for automation.
+    python3 -c 'import json; print(json.dumps({"dry_run": True}))'
+    exit 0
+fi
 
 # Check for smart creation mode
 SMART_MODE=$(NLM_CONFIG="$CONFIG_FILE" python3 -c '

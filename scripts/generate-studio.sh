@@ -13,6 +13,7 @@
 #   --wait                  Poll until artifact generation completes (checks every 5s, timeout 5min)
 #   --download <path>       Download artifact to specified path (implies --wait)
 #   --description <desc>    Description for data-table (required for data-table type)
+#   --dry-run               Print planned action and exit without creating artifacts
 #   --help                  Show this help message
 #
 # Output:
@@ -66,6 +67,7 @@ ARTIFACT_TYPE=""
 WAIT_FLAG=false
 DOWNLOAD_PATH=""
 DESCRIPTION=""
+DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -86,6 +88,10 @@ while [[ $# -gt 0 ]]; do
             [[ -z "${2:-}" ]] && error "--description requires an argument"
             DESCRIPTION="$2"
             shift 2
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
             ;;
         -*)
             error "Unknown option: $1"
@@ -119,6 +125,16 @@ esac
 # Validate data-table requires description
 if [[ "$ARTIFACT_TYPE" == "data-table" && -z "$DESCRIPTION" ]]; then
     error "data-table type requires --description argument"
+fi
+
+if [[ "$DRY_RUN" == true ]]; then
+    if [[ "$ARTIFACT_TYPE" == "data-table" ]]; then
+        info "Dry-run: would create $ARTIFACT_TYPE artifact for notebook $NOTEBOOK_ID with description: $DESCRIPTION"
+    else
+        info "Dry-run: would create $ARTIFACT_TYPE artifact for notebook $NOTEBOOK_ID"
+    fi
+    NLM_NB_ID="$NOTEBOOK_ID" NLM_ATYPE="$ARTIFACT_TYPE" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "artifact_type": os.environ["NLM_ATYPE"], "dry_run": True}))'
+    exit 0
 fi
 
 # Create artifact using nlm CLI
