@@ -2,6 +2,27 @@
 
 Pre-built templates for common NotebookLM workflows.
 
+## Template variables and validation
+
+`create-from-template.sh` renders templates by substituting `{{snake_case}}` placeholders.
+
+By default, rendering is strict:
+- If any required variables are missing, rendering fails with a clear list of missing variable names.
+- If any `{{...}}` placeholders remain after rendering, rendering fails.
+
+You can optionally add a metadata block to any template under the `_template` key. This block is removed from the final rendered config:
+
+```json
+{
+  "_template": {
+    "required": ["paper_topic"],
+    "defaults": {"depth": "10"}
+  },
+  "title": "Research: {{paper_topic}}",
+  "smart_creation": {"enabled": true, "topic": "{{paper_topic}}", "depth": "{{depth}}"}
+}
+```
+
 ## Available Templates
 
 ### Research Templates

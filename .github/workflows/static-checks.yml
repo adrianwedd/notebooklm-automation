@@ -33,6 +33,9 @@ jobs:
       - name: Dry-run smoke tests (no auth)
         run: bash tests/dry-run-smoke-test.sh
 
+      - name: Template engine self-test
+        run: bash tests/template-engine-test.sh
+
       - name: Python compile
         run: python3 -m py_compile lib/*.py
 
