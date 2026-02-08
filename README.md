@@ -285,12 +285,13 @@ Add sources to an existing notebook with automatic type detection.
 
 **Usage:**
 ```bash
-./scripts/add-sources.sh <notebook-id> <source1> [source2] ...
+./scripts/add-sources.sh <notebook-id> <source1> [source2] ... [--text-chunk-size N]
 ```
 
 **Source types (auto-detected):**
 - URLs: `https://example.com/article`
 - Text content: `text:"Your content here"`
+- Text file (chunked): `textfile:/path/to/file.txt`
 - Google Drive: `drive://document-id`
 
 **Note:** File uploads not supported by nlm CLI. Upload files to Google Drive first, then add via `drive://` prefix.
@@ -300,6 +301,7 @@ Add sources to an existing notebook with automatic type detection.
 ./scripts/add-sources.sh "abc-123-def-456" \
   "https://www.anthropic.com" \
   "text:Claude is an AI assistant" \
+  "textfile:./long-notes.txt" \
   "drive://1A2B3C4D5E"
 ```
 
