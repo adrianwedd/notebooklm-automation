@@ -41,7 +41,7 @@ Examples:
 
   # Deep research with artifacts
   ./research-topic.sh "machine learning basics" --depth 10 \
-    --auto-generate quiz,summary
+    --auto-generate quiz,report
 EOF
       exit 0
       ;;
@@ -63,12 +63,10 @@ echo "[1/3] Searching for sources..."
 # Web search
 echo "  Web search..."
 WEB_SOURCES=$(python3 "$SCRIPT_DIR/../lib/web_search.py" "$TOPIC" "$((DEPTH / 2))")
-WEB_COUNT=$(echo "$WEB_SOURCES" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
 
 # Wikipedia search
 echo "  Wikipedia search..."
 WIKI_SOURCES=$(python3 "$SCRIPT_DIR/../lib/wikipedia_search.py" "$TOPIC" 2)
-WIKI_COUNT=$(echo "$WIKI_SOURCES" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
 
 # Combine sources
 SOURCES_JSON=$(WEB_SOURCES_DATA="$WEB_SOURCES" WIKI_SOURCES_DATA="$WIKI_SOURCES" DEPTH_DATA="$DEPTH" python3 <<'PYEOF'
@@ -94,43 +92,43 @@ echo "  Deduplicating sources..."
 SOURCES_JSON=$(echo "$SOURCES_JSON" | python3 "$SCRIPT_DIR/../lib/deduplicate_sources.py" -)
 
 # Final trim to depth
-SOURCES_JSON=$(echo "$SOURCES_JSON" | python3 -c "
-import sys, json
+SOURCES_JSON=$(echo "$SOURCES_JSON" | NLM_DEPTH="$DEPTH" python3 -c '
+import sys, json, os
 sources = json.load(sys.stdin)
-print(json.dumps(sources[:$DEPTH]))
-")
+depth = int(os.environ["NLM_DEPTH"])
+print(json.dumps(sources[:depth]))
+')
 
-SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
 echo "  Final: $SOURCE_COUNT unique sources"
 
 # Step 2: Create notebook with sources
 echo "[2/3] Creating notebook..."
 NOTEBOOK_TITLE="Research: $TOPIC"
 NOTEBOOK_ID=$("$SCRIPT_DIR/create-notebook.sh" "$NOTEBOOK_TITLE" 2>&1 | \
-  python3 -c "
+  python3 -c '
 import sys, json
 lines = sys.stdin.read()
 # Find the JSON at the end
 try:
-    # Split lines and get the last JSON block
-    json_start = lines.rfind('{')
+    json_start = lines.rfind("{")
     if json_start != -1:
         data = json.loads(lines[json_start:])
-        print(data['id'])
-except Exception as e:
-    print('', file=sys.stderr)
-")
+        print(data["id"])
+except Exception:
+    print("", file=sys.stderr)
+')
 
 echo "  Created: $NOTEBOOK_ID"
 
 # Add sources
 echo "  Adding sources..."
-SOURCE_URLS=$(echo "$SOURCES_JSON" | python3 -c "
+SOURCE_URLS=$(echo "$SOURCES_JSON" | python3 -c '
 import sys, json
 sources = json.load(sys.stdin)
 for s in sources:
-    print(s['url'])
-")
+    print(s["url"])
+')
 
 while IFS= read -r url; do
   echo "    Adding: $url"

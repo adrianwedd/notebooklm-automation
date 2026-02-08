@@ -6,6 +6,7 @@ Web search and source discovery for NotebookLM automation.
 import sys
 import json
 from typing import List, Dict
+from urllib.parse import urlparse
 from ddgs import DDGS
 
 def search_web(query: str, max_results: int = 10) -> List[Dict[str, str]]:
@@ -41,8 +42,12 @@ def filter_quality_sources(results: List[Dict], min_snippet_length: int = 50) ->
 
     filtered = []
     for r in results:
+        netloc = urlparse(r.get('url', '')).netloc.lower()
+        if netloc.startswith('www.'):
+            netloc = netloc[4:]
+
         # Skip spam domains
-        if any(domain in r['url'] for domain in spam_domains):
+        if any(netloc == domain or netloc.endswith('.' + domain) for domain in spam_domains):
             continue
 
         # Require minimum snippet length

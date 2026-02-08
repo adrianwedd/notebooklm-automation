@@ -21,7 +21,7 @@ We take security seriously. If you discover a security vulnerability, please rep
 
 Instead, please report security issues by emailing:
 
-📧 **[Maintainer Email - Update this]**
+📧 GitHub Security Advisories: https://github.com/adrianwedd/notebooklm-automation/security/advisories
 
 Include in your report:
 - Description of the vulnerability
@@ -150,7 +150,7 @@ While we've implemented strong protections:
 ### Recent Security Improvements
 
 - **2026-02-07**: Comprehensive security review
-  - Verified no command injection vulnerabilities
+  - Bash-to-Python interpolation patterns identified and being remediated
   - Confirmed proper variable quoting throughout
   - Validated input sanitization
   - No use of dangerous commands (`eval`, `exec`)

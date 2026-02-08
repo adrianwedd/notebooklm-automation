@@ -43,24 +43,24 @@ if [ $EXIT_CODE -ne 0 ]; then
 fi
 
 # Extract notebook ID from response
-NOTEBOOK_ID=$(echo "$NOTEBOOK_JSON" | python3 -c "
+NOTEBOOK_ID=$(echo "$NOTEBOOK_JSON" | python3 -c '
 import sys, json, re
 output = sys.stdin.read()
 # Try to parse as JSON
 try:
     data = json.loads(output)
-    if isinstance(data, dict) and 'id' in data:
-        print(data['id'])
+    if isinstance(data, dict) and "id" in data:
+        print(data["id"])
     else:
-        print('', file=sys.stderr)
-except:
+        print("", file=sys.stderr)
+except Exception:
     # Try to extract UUID from text output
-    match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', output)
+    match = re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", output)
     if match:
         print(match.group(0))
     else:
-        print('', file=sys.stderr)
-" 2>/dev/null)
+        print("", file=sys.stderr)
+' 2>/dev/null)
 
 if [ -z "$NOTEBOOK_ID" ]; then
   echo "Error: Could not extract notebook ID from response:"
@@ -72,11 +72,11 @@ echo "✓ Created notebook: $NOTEBOOK_ID"
 echo "  Title: $TITLE"
 
 # Output JSON result with proper escaping
-python3 -c "
-import json
+NLM_NB_ID="$NOTEBOOK_ID" NLM_TITLE="$TITLE" python3 -c '
+import json, os
 print(json.dumps({
-    'id': '''$NOTEBOOK_ID''',
-    'title': '''$TITLE''',
-    'sources_added': 0
+    "id": os.environ["NLM_NB_ID"],
+    "title": os.environ["NLM_TITLE"],
+    "sources_added": 0
 }, indent=2))
-"
+'

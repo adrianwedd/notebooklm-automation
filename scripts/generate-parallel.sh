@@ -23,6 +23,10 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --download)
+      if [[ -z "${2:-}" ]]; then
+        echo "Error: --download requires a directory argument" >&2
+        exit 1
+      fi
       DOWNLOAD_DIR="$2"
       WAIT_FLAG=true
       shift 2
@@ -79,13 +83,17 @@ declare -a PIDS
 declare -a TYPES_RUNNING
 declare -a OUTPUT_FILES
 
+# Temp directory for output files
+NLM_TMPDIR=$(mktemp -d -t nlm-parallel.XXXXXX)
+trap 'rm -rf "$NLM_TMPDIR"' EXIT
+
 # Progress monitoring function
 monitor_progress() {
   local pids=("$@")
   local total=${#pids[@]}
   local completed=0
 
-  while [ $completed -lt $total ]; do
+  while [ "$completed" -lt "$total" ]; do
     completed=0
     for pid in "${pids[@]}"; do
       if ! kill -0 "$pid" 2>/dev/null; then
@@ -103,7 +111,7 @@ monitor_progress() {
 # Generate artifacts in parallel
 echo "Starting parallel generation..."
 for artifact_type in "${ARTIFACT_TYPES[@]}"; do
-  OUTPUT_FILE="/tmp/generate-${NOTEBOOK_ID}-${artifact_type}-$$.json"
+  OUTPUT_FILE="${NLM_TMPDIR}/generate-${artifact_type}.json"
   OUTPUT_FILES+=("$OUTPUT_FILE")
   TYPES_RUNNING+=("$artifact_type")
 
@@ -162,17 +170,17 @@ if [ "$WAIT_FLAG" = true ]; then
 
     if [ -f "$output_file" ]; then
       # Extract artifact_id from JSON output
-      ARTIFACT_ID=$(tail -5 "$output_file" | python3 -c "
+      ARTIFACT_ID=$(tail -5 "$output_file" | python3 -c '
 import sys, json
 try:
     for line in sys.stdin:
-        if line.strip().startswith('{'):
+        if line.strip().startswith("{"):
             data = json.loads(line)
-            print(data.get('artifact_id', 'unknown'))
+            print(data.get("artifact_id", "unknown"))
             break
-except:
-    print('unknown')
-" 2>/dev/null || echo "unknown")
+except Exception:
+    print("unknown")
+' 2>/dev/null || echo "unknown")
 
       echo "  $artifact_type: $ARTIFACT_ID"
     fi
@@ -193,11 +201,6 @@ except:
         echo "    (download not supported for $artifact_type)"
     done
   fi
-
-  # Cleanup temp files
-  for output_file in "${OUTPUT_FILES[@]}"; do
-    rm -f "$output_file"
-  done
 
   exit $FAILED_COUNT
 else

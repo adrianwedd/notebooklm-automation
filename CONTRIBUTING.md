@@ -14,7 +14,7 @@ Thank you for your interest in contributing! This document provides guidelines f
 
 ## Code of Conduct
 
-This project follows a contributor covenant code of conduct. Be respectful and inclusive in all interactions.
+Be respectful and inclusive in all interactions. This project follows standard open-source etiquette in issues, discussions, and pull requests.
 
 ## Getting Started
 

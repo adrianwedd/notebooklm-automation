@@ -2,14 +2,54 @@
 set -euo pipefail
 
 # Batch export all NotebookLM notebooks to a local directory structure.
-# Usage: ./export-all.sh [output-base-dir] [--continue-on-error]
+# Usage: ./export-all.sh [--output DIR] [--continue-on-error]
 
-OUTPUT_BASE="${1:-./exports}"
+show_help() {
+  cat <<EOF
+Usage: export-all.sh [options]
+
+Batch export all NotebookLM notebooks to a local directory structure.
+
+Options:
+  --output <dir>       Output base directory (default: ./exports)
+  --continue-on-error  Continue exporting if individual notebooks fail
+  -h, --help           Show this help message
+
+Examples:
+  ./export-all.sh
+  ./export-all.sh --output ./my-exports
+  ./export-all.sh --output ./exports --continue-on-error
+EOF
+  exit 0
+}
+
+OUTPUT_BASE="./exports"
 CONTINUE_ON_ERROR=false
 
-if [[ "${2:-}" == "--continue-on-error" ]]; then
-  CONTINUE_ON_ERROR=true
-fi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      show_help
+      ;;
+    --output)
+      OUTPUT_BASE="$2"
+      shift 2
+      ;;
+    --continue-on-error)
+      CONTINUE_ON_ERROR=true
+      shift
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+    *)
+      # Backwards compat: treat first positional arg as output dir
+      OUTPUT_BASE="$1"
+      shift
+      ;;
+  esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXPORT_SCRIPT="$SCRIPT_DIR/export-notebook.sh"
@@ -27,14 +67,14 @@ echo ""
 # Get all notebooks
 echo "Fetching notebook list..."
 NOTEBOOKS=$(nlm notebook list 2>/dev/null)
-TOTAL=$(echo "$NOTEBOOKS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+TOTAL=$(echo "$NOTEBOOKS" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
 
 echo "Found $TOTAL notebooks to export"
 echo ""
 
 # Create temp files for counters (to survive subshell)
 TEMP_DIR=$(mktemp -d)
-trap "rm -rf '$TEMP_DIR'" EXIT
+trap 'rm -rf "$TEMP_DIR"' EXIT
 
 echo "0" > "$TEMP_DIR/success"
 echo "0" > "$TEMP_DIR/error"
@@ -81,12 +121,12 @@ while IFS='|' read -r notebook_id notebook_title; do
   fi
 
   echo ""
-done < <(echo "$NOTEBOOKS" | python3 -c "
+done < <(echo "$NOTEBOOKS" | python3 -c '
 import sys, json
 notebooks = json.load(sys.stdin)
 for nb in notebooks:
-    print(nb['id'] + '|' + nb['title'])
-")
+    print(nb["id"] + "|" + nb["title"])
+')
 
 # Read final counts
 success_count=$(<"$TEMP_DIR/success")

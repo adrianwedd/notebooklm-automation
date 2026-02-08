@@ -89,10 +89,6 @@ echo "Export URL: $EXPORT_URL" >&2
 # --- Determine output filename ---
 if [[ -z "$OUTPUT_FILE" ]]; then
     # Try to get the document title from the metadata
-    TITLE_RESPONSE=$(curl -s -L -b "$COOKIES_FILE" \
-        "https://docs.google.com/document/d/${DOC_ID}/edit" \
-        -o /dev/null -w '%{url_effective}' 2>/dev/null || true)
-
     # Fallback to doc ID as filename
     OUTPUT_FILE="${DOC_ID}.md"
 

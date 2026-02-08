@@ -100,7 +100,7 @@ done
 [[ ! -f "$CONFIG_FILE" ]] && error "Config file not found: $CONFIG_FILE"
 
 # Validate JSON
-python3 -c "import json, sys; json.load(open(sys.argv[1]))" "$CONFIG_FILE" 2>/dev/null || error "Invalid JSON in config file: $CONFIG_FILE"
+python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$CONFIG_FILE" 2>/dev/null || error "Invalid JSON in config file: $CONFIG_FILE"
 
 info "Loading config from: $CONFIG_FILE"
 
@@ -150,14 +150,14 @@ if [[ "$CONFIG_DATA" == ERROR:* ]]; then
 fi
 
 # Extract individual fields
-TITLE=$(echo "$CONFIG_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin)['title'])")
-SOURCES_JSON=$(echo "$CONFIG_DATA" | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin)['sources']))")
-STUDIO_JSON=$(echo "$CONFIG_DATA" | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin)['studio']))")
+TITLE=$(echo "$CONFIG_DATA" | python3 -c 'import sys, json; print(json.load(sys.stdin)["title"])')
+SOURCES_JSON=$(echo "$CONFIG_DATA" | python3 -c 'import sys, json; print(json.dumps(json.load(sys.stdin)["sources"]))')
+STUDIO_JSON=$(echo "$CONFIG_DATA" | python3 -c 'import sys, json; print(json.dumps(json.load(sys.stdin)["studio"]))')
 
 info "Config loaded successfully"
 info "  Title: $TITLE"
-info "  Sources: $(echo "$SOURCES_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")"
-info "  Studio artifacts: $(echo "$STUDIO_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")"
+info "  Sources: $(echo "$SOURCES_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')"
+info "  Studio artifacts: $(echo "$STUDIO_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')"
 
 # Find script directory (same directory as this script)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -168,33 +168,33 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ ! -x "$SCRIPT_DIR/generate-studio.sh" ]] && error "Helper script not found or not executable: generate-studio.sh"
 
 # Check for smart creation mode
-SMART_MODE=$(python3 -c "
-import sys, json
+SMART_MODE=$(NLM_CONFIG="$CONFIG_FILE" python3 -c '
+import os, json
 try:
-    with open('$CONFIG_FILE') as f:
+    with open(os.environ["NLM_CONFIG"]) as f:
         config = json.load(f)
-    print(config.get('smart_creation', {}).get('enabled', 'false'))
-except:
-    print('false')
-")
+    print(config.get("smart_creation", {}).get("enabled", "false"))
+except Exception:
+    print("false")
+')
 
 if [[ "$SMART_MODE" == "True" || "$SMART_MODE" == "true" ]]; then
   info "Smart creation mode enabled"
 
   # Extract smart creation config
-  SMART_TOPIC=$(python3 -c "
-import sys, json
-with open('$CONFIG_FILE') as f:
+  SMART_TOPIC=$(NLM_CONFIG="$CONFIG_FILE" python3 -c '
+import os, json
+with open(os.environ["NLM_CONFIG"]) as f:
     config = json.load(f)
-print(config.get('smart_creation', {}).get('topic', ''))
-")
+print(config.get("smart_creation", {}).get("topic", ""))
+')
 
-  SMART_DEPTH=$(python3 -c "
-import sys, json
-with open('$CONFIG_FILE') as f:
+  SMART_DEPTH=$(NLM_CONFIG="$CONFIG_FILE" python3 -c '
+import os, json
+with open(os.environ["NLM_CONFIG"]) as f:
     config = json.load(f)
-print(config.get('smart_creation', {}).get('depth', 5))
-")
+print(config.get("smart_creation", {}).get("depth", 5))
+')
 
   if [[ -z "$SMART_TOPIC" ]]; then
     error "Smart creation enabled but no topic specified"
@@ -206,7 +206,8 @@ print(config.get('smart_creation', {}).get('depth', 5))
   info "Searching for sources (depth: $SMART_DEPTH)..."
 
   # Create temp file for research output
-  RESEARCH_OUTPUT="/tmp/research-$$-output.txt"
+  RESEARCH_OUTPUT=$(mktemp -t nlm-research.XXXXXX)
+  trap 'rm -f "$RESEARCH_OUTPUT"' EXIT
 
   # Run research (creates notebook and adds sources)
   "$SCRIPT_DIR/research-topic.sh" "$SMART_TOPIC" --depth "$SMART_DEPTH" \
@@ -235,29 +236,27 @@ else
   # Phase 1: Create notebook
   section "Phase 1: Creating Notebook"
   CREATE_OUTPUT=$("$SCRIPT_DIR/create-notebook.sh" "$TITLE" 2>&1) || error "Failed to create notebook"
-  NOTEBOOK_ID=$(echo "$CREATE_OUTPUT" | python3 -c "
+  NOTEBOOK_ID=$(echo "$CREATE_OUTPUT" | python3 -c '
 import sys, json, re
-
 output = sys.stdin.read()
 
 # Try to find JSON in the output
-# Look for lines that start with { and parse as JSON
-for line in output.split('\n'):
+for line in output.split("\n"):
     line = line.strip()
-    if line.startswith('{'):
+    if line.startswith("{"):
         try:
             data = json.loads(line)
-            if 'id' in data:
-                print(data['id'])
+            if "id" in data:
+                print(data["id"])
                 sys.exit(0)
-        except:
+        except Exception:
             continue
 
 # Fallback: try to extract UUID directly
-match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', output)
+match = re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", output)
 if match:
     print(match.group(0))
-")
+')
 
   [[ -z "$NOTEBOOK_ID" ]] && error "Failed to extract notebook ID from create output"
 
@@ -268,7 +267,7 @@ if match:
   SOURCES_ADDED=0
   SOURCES_FAILED=0
 
-  SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+  SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
 
   if [[ "$SOURCE_COUNT" -eq 0 ]]; then
     warn "No sources to add"
@@ -280,19 +279,22 @@ if match:
     # Use Python to iterate sources and build command
     while IFS= read -r source; do
         [[ -n "$source" ]] && ADD_SOURCES_CMD+=("$source")
-    done < <(echo "$SOURCES_JSON" | python3 -c "import sys,json; sources=json.load(sys.stdin); [print(s) for s in sources]")
+    done < <(echo "$SOURCES_JSON" | python3 -c 'import sys, json; sources=json.load(sys.stdin); [print(s) for s in sources]')
 
     # Execute add-sources.sh
     set +e
     ADD_OUTPUT=$("${ADD_SOURCES_CMD[@]}" 2>&1)
     ADD_EXIT=$?
     set -e
+    if [[ $ADD_EXIT -ne 0 ]]; then
+        warn "add-sources.sh exited with code $ADD_EXIT"
+    fi
 
     # Parse results
     LAST_LINE=$(echo "$ADD_OUTPUT" | tail -1)
-    if echo "$LAST_LINE" | python3 -c "import sys,json; json.loads(sys.stdin.read())" 2>/dev/null; then
-        SOURCES_ADDED=$(echo "$LAST_LINE" | python3 -c "import sys,json; print(json.load(sys.stdin)['sources_added'])")
-        SOURCES_FAILED=$(echo "$LAST_LINE" | python3 -c "import sys,json; print(json.load(sys.stdin)['sources_failed'])")
+    if echo "$LAST_LINE" | python3 -c 'import sys, json; json.loads(sys.stdin.read())' 2>/dev/null; then
+        SOURCES_ADDED=$(echo "$LAST_LINE" | python3 -c 'import sys, json; print(json.load(sys.stdin)["sources_added"])')
+        SOURCES_FAILED=$(echo "$LAST_LINE" | python3 -c 'import sys, json; print(json.load(sys.stdin)["sources_failed"])')
     else
         warn "Could not parse add-sources output, assuming all failed"
         SOURCES_FAILED=$SOURCE_COUNT
@@ -310,7 +312,7 @@ section "Phase 3: Generating Studio Artifacts"
 ARTIFACTS_CREATED=0
 ARTIFACTS_FAILED=0
 
-STUDIO_COUNT=$(echo "$STUDIO_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+STUDIO_COUNT=$(echo "$STUDIO_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
 
 if [[ "$STUDIO_COUNT" -eq 0 ]]; then
     warn "No studio artifacts to generate"
@@ -324,17 +326,17 @@ else
             warn "generate-parallel.sh not found, falling back to sequential generation"
             PARALLEL_FLAG=false
         else
-            # Extract artifact types
-            ARTIFACT_TYPES=$(echo "$STUDIO_JSON" | python3 -c "
+            # Extract artifact types into array
+            IFS=' ' read -ra ARTIFACT_TYPES <<< "$(echo "$STUDIO_JSON" | python3 -c '
 import sys, json
 artifacts = json.load(sys.stdin)
-types = [a.get('type') for a in artifacts]
-print(' '.join(types))
-")
+types = [a.get("type") for a in artifacts]
+print(" ".join(types))
+')"
 
             # Use parallel generation
             set +e
-            "$SCRIPT_DIR/generate-parallel.sh" "$NOTEBOOK_ID" $ARTIFACT_TYPES --wait
+            "$SCRIPT_DIR/generate-parallel.sh" "$NOTEBOOK_ID" "${ARTIFACT_TYPES[@]}" --wait
             PARALLEL_EXIT=$?
             set -e
 

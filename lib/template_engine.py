@@ -6,7 +6,7 @@ Template engine for NotebookLM automation.
 import sys
 import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 def load_template(template_path: str) -> Dict[str, Any]:
     """Load template JSON file."""
@@ -35,7 +35,7 @@ def interpolate_variables(template: Dict, variables: Dict[str, str]) -> Dict:
 
     return interpolate_value(template)
 
-def list_templates(templates_dir: str = "templates") -> list:
+def list_templates(templates_dir: str = "templates") -> List[Dict[str, str]]:
     """List available templates."""
     templates = []
     templates_path = Path(templates_dir)
@@ -54,7 +54,7 @@ def list_templates(templates_dir: str = "templates") -> list:
 
     return templates
 
-def main():
+def main() -> None:
     """CLI interface."""
     if len(sys.argv) < 2:
         print("Usage: template_engine.py <command> [args]")

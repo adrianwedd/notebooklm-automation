@@ -77,17 +77,15 @@ SOURCES_FAILED=0
 
 # Temporary file for collecting errors
 ERROR_LOG=$(mktemp)
-trap "rm -f $ERROR_LOG" EXIT
+trap 'rm -f "$ERROR_LOG"' EXIT
 
 # Function to detect source type and add it
 add_source() {
     local source="$1"
-    local source_type=""
     local result=0
 
     # Detect source type
     if [[ "$source" =~ ^https?:// ]]; then
-        source_type="url"
         echo -e "${YELLOW}Adding URL source:${NC} $source" >&2
         if nlm add url "$NOTEBOOK_ID" "$source" 2>>"$ERROR_LOG"; then
             ((SOURCES_ADDED++))
@@ -98,7 +96,6 @@ add_source() {
             result=1
         fi
     elif [[ "$source" =~ ^text: ]]; then
-        source_type="text"
         # Remove "text:" prefix
         local text_content="${source#text:}"
         echo -e "${YELLOW}Adding text source${NC}" >&2
@@ -111,7 +108,6 @@ add_source() {
             result=1
         fi
     elif [[ "$source" =~ ^drive:// ]]; then
-        source_type="drive"
         # Remove "drive://" prefix
         local drive_id="${source#drive://}"
         echo -e "${YELLOW}Adding Drive source:${NC} $drive_id" >&2
@@ -124,7 +120,6 @@ add_source() {
             result=1
         fi
     elif [[ -f "$source" ]]; then
-        source_type="file"
         echo -e "${RED}Error: File sources not yet supported by nlm CLI${NC}" >&2
         echo -e "${YELLOW}Source:${NC} $source" >&2
         ((SOURCES_FAILED++))
@@ -155,11 +150,13 @@ if [ -s "$ERROR_LOG" ]; then
 fi
 
 # Output JSON using Python for proper escaping
-python3 -c "import json; print(json.dumps({
-    'notebook_id': '$NOTEBOOK_ID',
-    'sources_added': $SOURCES_ADDED,
-    'sources_failed': $SOURCES_FAILED
-}))"
+NLM_NB_ID="$NOTEBOOK_ID" NLM_ADDED="$SOURCES_ADDED" NLM_FAILED="$SOURCES_FAILED" python3 -c '
+import json, os
+print(json.dumps({
+    "notebook_id": os.environ["NLM_NB_ID"],
+    "sources_added": int(os.environ["NLM_ADDED"]),
+    "sources_failed": int(os.environ["NLM_FAILED"])
+}))'
 
 # Exit with appropriate code
 if [ $SOURCES_FAILED -gt 0 ]; then

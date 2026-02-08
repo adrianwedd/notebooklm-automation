@@ -17,12 +17,12 @@ Use this skill when the user wants to create a new notebook with sources and art
        "url:https://example.com",
        "text:Direct text content"
      ],
-     "studio": [
-       {"type": "quiz"},
-       {"type": "summary"}
-     ]
-   }
-   ```
+	     "studio": [
+	       {"type": "quiz"},
+	       {"type": "report"}
+	     ]
+	   }
+	   ```
 
 2. **Run automation**:
    ```bash
@@ -89,10 +89,10 @@ Use this skill when the user wants to create a new notebook with sources and art
 
 2. **With auto-generation**:
    ```bash
-   ./scripts/research-topic.sh "machine learning" \
-     --depth 10 \
-     --auto-generate quiz,summary
-   ```
+	   ./scripts/research-topic.sh "machine learning" \
+	     --depth 10 \
+	     --auto-generate quiz,report
+	   ```
 
 ## Parallel Generation
 
@@ -127,15 +127,14 @@ For faster artifact generation (3+ artifacts):
 
 ### Studio Artifact Types
 
-Available types:
-- `audio` - Audio overview
-- `video` - Video overview
-- `report` - Written report
-- `quiz` - Interactive quiz
-- `flashcards` - Study flashcards
-- `summary` - Summary document
-- `mindmap` - Mind map visualization
-- `slides` - Presentation slides
+	Available types:
+	- `audio` - Audio overview
+	- `video` - Video overview
+	- `report` - Written report
+	- `quiz` - Interactive quiz
+	- `flashcards` - Study flashcards
+	- `mindmap` - Mind map visualization
+	- `slides` - Presentation slides
 
 ## Common Issues
 
@@ -174,12 +173,12 @@ cat > /tmp/my-notebook.json <<'EOF'
     "topic": "AI safety alignment",
     "depth": 8
   },
-  "studio": [
-    {"type": "quiz"},
-    {"type": "summary"}
-  ]
-}
-EOF
+	  "studio": [
+	    {"type": "quiz"},
+	    {"type": "report"}
+	  ]
+	}
+	EOF
 
 # 2. Create and export
 ./scripts/automate-notebook.sh \

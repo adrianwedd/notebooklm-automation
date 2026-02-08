@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- GitHub Actions workflows for CI/CD
+- Planned: GitHub Actions workflows for CI/CD (not yet added)
 - Comprehensive issue templates
 - Security policy documentation
 - Contributing guidelines

@@ -2,26 +2,69 @@
 set -euo pipefail
 
 # Export a NotebookLM notebook to a local directory structure.
-# Usage: ./export-notebook.sh <notebook-id-or-name> [output-dir] [--format FORMAT]
+# Usage: ./export-notebook.sh <notebook-id-or-name> [--output DIR] [--format FORMAT]
 
-NOTEBOOK_ARG="${1:?Usage: export-notebook.sh <notebook-id-or-name> [output-dir] [--format FORMAT]}"
-BASE_OUTPUT="${2:-./exports}"
-FORMAT="notebooklm"  # default format
+show_help() {
+  cat <<EOF
+Usage: export-notebook.sh <notebook-id-or-name> [options]
 
-# Parse optional format flag
-shift 2 2>/dev/null || shift $#
+Export a NotebookLM notebook to a local directory structure.
+
+Arguments:
+  notebook-id-or-name    Notebook UUID or name substring (case-insensitive)
+
+Options:
+  --output <dir>     Output directory (default: ./exports)
+  --format <format>  Export format: notebooklm, obsidian, notion, anki (default: notebooklm)
+  -h, --help         Show this help message
+
+Examples:
+  ./export-notebook.sh "machine learning" --output ./exports
+  ./export-notebook.sh abc-123-def-456 --format obsidian
+  ./export-notebook.sh "research notes" --output ./out --format anki
+EOF
+  exit 0
+}
+
+# Parse arguments
+NOTEBOOK_ARG=""
+BASE_OUTPUT="./exports"
+FORMAT="notebooklm"
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    -h|--help)
+      show_help
+      ;;
+    --output)
+      BASE_OUTPUT="$2"
+      shift 2
+      ;;
     --format)
       FORMAT="$2"
       shift 2
       ;;
-    *)
+    -*)
       echo "Unknown option: $1" >&2
       exit 1
       ;;
+    *)
+      if [[ -z "$NOTEBOOK_ARG" ]]; then
+        NOTEBOOK_ARG="$1"
+      else
+        echo "Unexpected argument: $1" >&2
+        exit 1
+      fi
+      shift
+      ;;
   esac
 done
+
+if [[ -z "$NOTEBOOK_ARG" ]]; then
+  echo "Error: Missing required argument: notebook-id-or-name" >&2
+  echo "Try --help for usage." >&2
+  exit 1
+fi
 
 slugify() {
   echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//' | head -c 80
@@ -32,33 +75,34 @@ if [[ "$NOTEBOOK_ARG" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
   NOTEBOOK_ID="$NOTEBOOK_ARG"
 else
   echo "Resolving notebook by name: $NOTEBOOK_ARG"
-  NOTEBOOK_ID=$(nlm notebook list 2>/dev/null | python3 -c "
-import sys, json
+  NOTEBOOK_ID=$(nlm notebook list 2>/dev/null | NLM_QUERY="$NOTEBOOK_ARG" python3 -c '
+import sys, json, os
 notebooks = json.load(sys.stdin)
-query = '$NOTEBOOK_ARG'.lower()
+query = os.environ["NLM_QUERY"].lower()
 for nb in notebooks:
-    if query in nb['title'].lower():
-        print(nb['id'])
+    if query in nb["title"].lower():
+        print(nb["id"])
         break
 else:
-    print('NOT_FOUND', file=sys.stderr)
+    print("NOT_FOUND", file=sys.stderr)
     sys.exit(1)
-")
+')
 fi
 
 echo "Notebook ID: $NOTEBOOK_ID"
 
 # --- Get notebook metadata ---
-NOTEBOOK_JSON=$(nlm notebook list 2>/dev/null | python3 -c "
-import sys, json
+NOTEBOOK_JSON=$(nlm notebook list 2>/dev/null | NLM_NB_ID="$NOTEBOOK_ID" python3 -c '
+import sys, json, os
 notebooks = json.load(sys.stdin)
+target_id = os.environ["NLM_NB_ID"]
 for nb in notebooks:
-    if nb['id'] == '$NOTEBOOK_ID':
+    if nb["id"] == target_id:
         json.dump(nb, sys.stdout, indent=2)
         break
-")
+')
 
-TITLE=$(echo "$NOTEBOOK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['title'])")
+TITLE=$(echo "$NOTEBOOK_JSON" | python3 -c 'import sys, json; print(json.load(sys.stdin)["title"])')
 SLUG=$(slugify "$TITLE")
 
 if [ -z "$SLUG" ]; then
@@ -80,16 +124,16 @@ echo "  [+] metadata.json"
 echo "  Exporting sources..."
 SOURCES=$(nlm source list "$NOTEBOOK_ID" 2>/dev/null)
 echo "$SOURCES" > "$OUTPUT_DIR/sources/index.json"
-SOURCE_COUNT=$(echo "$SOURCES" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)
+SOURCE_COUNT=$(echo "$SOURCES" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
 echo "  [+] sources/index.json ($SOURCE_COUNT sources)"
 
 # Try to get source content for each source
-echo "$SOURCES" | python3 -c "
+echo "$SOURCES" | python3 -c '
 import sys, json
 sources = json.load(sys.stdin)
 for s in sources:
-    print(s['id'] + '|' + s['title'] + '|' + s['type'])
-" 2>/dev/null | while IFS='|' read -r src_id src_title src_type; do
+    print(s["id"] + "|" + s["title"] + "|" + s["type"])
+' 2>/dev/null | while IFS='|' read -r src_id src_title _src_type; do
   safe_name=$(echo "$src_title" | sed 's/[^a-zA-Z0-9._-]/_/g' | head -c 100)
   content_file="$OUTPUT_DIR/sources/${safe_name}.md"
   if nlm content source "$src_id" -o "$content_file" 2>/dev/null; then
@@ -115,20 +159,19 @@ echo "[]" > "$OUTPUT_DIR/chat/index.json"
 # --- Export notes ---
 echo "  Exporting notes..."
 NOTES_OUTPUT=$(nlm note list "$NOTEBOOK_ID" 2>&1)
-if echo "$NOTES_OUTPUT" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+if echo "$NOTES_OUTPUT" | python3 -c 'import sys, json; json.load(sys.stdin)' 2>/dev/null; then
   echo "$NOTES_OUTPUT" > "$OUTPUT_DIR/notes/index.json"
-  NOTE_COUNT=$(echo "$NOTES_OUTPUT" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+  NOTE_COUNT=$(echo "$NOTES_OUTPUT" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
   echo "  [+] notes/index.json ($NOTE_COUNT notes)"
-  echo "$NOTES_OUTPUT" | python3 -c "
+  echo "$NOTES_OUTPUT" | python3 -c '
 import sys, json
 notes = json.load(sys.stdin)
 for n in notes:
-    nid = n.get('id','unknown')
-    title = n.get('title','untitled')
-    content = n.get('content','')
-    safe = ''.join(c if c.isalnum() or c in '._- ' else '_' for c in title)[:80]
-    print(f'{safe}|||{content}')
-" 2>/dev/null | while IFS='|||' read -r note_name note_content; do
+    title = n.get("title", "untitled")
+    content = n.get("content", "")
+    safe = "".join(c if c.isalnum() or c in "._- " else "_" for c in title)[:80]
+    print(f"{safe}|||{content}")
+' 2>/dev/null | while IFS='|||' read -r note_name note_content; do
     if [ -n "$note_name" ]; then
       echo "$note_content" > "$OUTPUT_DIR/notes/${note_name}.md"
       echo "  [+] notes/${note_name}.md"
@@ -143,15 +186,16 @@ fi
 echo "  Exporting studio artifacts..."
 ARTIFACTS=$(nlm list artifacts "$NOTEBOOK_ID" 2>/dev/null || echo "[]")
 echo "$ARTIFACTS" > "$OUTPUT_DIR/studio/manifest.json"
-ARTIFACT_COUNT=$(echo "$ARTIFACTS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)
+ARTIFACT_COUNT=$(echo "$ARTIFACTS" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
 echo "  [+] studio/manifest.json ($ARTIFACT_COUNT artifacts)"
 
 download_artifact() {
   local atype="$1" aid="$2" outpath="$3"
   if nlm download "$atype" "$NOTEBOOK_ID" --id "$aid" -o "$outpath" --no-progress 2>/dev/null; then
     if [ -f "$outpath" ] && [ -s "$outpath" ]; then
-      local size=$(ls -lh "$outpath" | awk '{print $5}')
-      echo "  [+] $outpath ($size)"
+      local size_bytes
+      size_bytes=$(wc -c <"$outpath" | tr -d ' ')
+      echo "  [+] $outpath (${size_bytes} bytes)"
       return 0
     fi
   fi
@@ -159,13 +203,13 @@ download_artifact() {
   return 1
 }
 
-echo "$ARTIFACTS" | python3 -c "
+echo "$ARTIFACTS" | python3 -c '
 import sys, json
 artifacts = json.load(sys.stdin)
 for a in artifacts:
-    if a.get('status') == 'completed':
-        print(a['id'] + '|' + a['type'])
-" 2>/dev/null | while IFS='|' read -r art_id art_type; do
+    if a.get("status") == "completed":
+        print(a["id"] + "|" + a["type"])
+' 2>/dev/null | while IFS='|' read -r art_id art_type; do
   case "$art_type" in
     audio)
       download_artifact audio "$art_id" "$OUTPUT_DIR/studio/audio/${art_id}.mp3" || true

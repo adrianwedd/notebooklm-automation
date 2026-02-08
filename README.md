@@ -189,7 +189,7 @@ Export notebooks in multiple formats for knowledge management tools.
 
 # Creates:
 # output-anki/
-# └── notebook-title-anki.csv   # Front,Back,Tags format
+# └── anki-import.csv   # Front,Back,Tags format
 ```
 
 **Features:**
@@ -494,7 +494,7 @@ Create notebooks from pre-built templates with variable substitution.
     "depth": 15
   },
   "studio": [
-    {"type": "summary"},
+    {"type": "report"},
     {"type": "mindmap"},
     {"type": "quiz"}
   ]

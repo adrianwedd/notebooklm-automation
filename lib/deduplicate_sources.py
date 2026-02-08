@@ -6,7 +6,7 @@ Source deduplication for NotebookLM research automation.
 import sys
 import json
 from typing import List, Dict
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
 def normalize_url(url: str) -> str:
     """
@@ -25,8 +25,16 @@ def normalize_url(url: str) -> str:
         netloc = netloc[4:]
 
     # Remove tracking params
-    tracking_params = ['utm_source', 'utm_medium', 'utm_campaign',
-                      'utm_content', 'utm_term', 'ref', 'source']
+    tracking_params = {
+        'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
+        'ref', 'source'
+    }
+    query_items = parse_qsl(parsed.query, keep_blank_values=False)
+    filtered_items = [
+        (k, v) for (k, v) in query_items
+        if (k not in tracking_params and not k.startswith('utm_'))
+    ]
+    query = urlencode(filtered_items, doseq=True)
 
     # Rebuild without tracking
     path = parsed.path.rstrip('/')
@@ -36,7 +44,7 @@ def normalize_url(url: str) -> str:
         netloc,
         path,
         parsed.params,
-        '',  # Remove query string for now
+        query,
         ''   # Remove fragment
     ))
 

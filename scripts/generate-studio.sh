@@ -26,7 +26,7 @@
 #   ./generate-studio.sh abc123 audio --wait
 #
 #   # Generate audio, wait, and download
-#   ./generate-studio.sh abc123 audio --download /tmp/podcast.mp3
+#   ./generate-studio.sh abc123 audio --download ./artifacts/podcast.mp3
 #
 #   # Generate data table with description
 #   ./generate-studio.sh abc123 data-table --description "Compare prices by region" --wait
@@ -108,10 +108,13 @@ done
 [[ -z "$ARTIFACT_TYPE" ]] && error "Missing required argument: type"
 
 # Validate artifact type
-VALID_TYPES=("audio" "video" "report" "quiz" "flashcards" "mindmap" "slides" "infographic" "data-table")
-if [[ ! " ${VALID_TYPES[@]} " =~ " ${ARTIFACT_TYPE} " ]]; then
-    error "Invalid artifact type: $ARTIFACT_TYPE. Valid types: ${VALID_TYPES[*]}"
-fi
+case "$ARTIFACT_TYPE" in
+    audio|video|report|quiz|flashcards|mindmap|slides|infographic|data-table)
+        ;;
+    *)
+        error "Invalid artifact type: $ARTIFACT_TYPE. Valid types: audio video report quiz flashcards mindmap slides infographic data-table"
+        ;;
+esac
 
 # Validate data-table requires description
 if [[ "$ARTIFACT_TYPE" == "data-table" && -z "$DESCRIPTION" ]]; then
@@ -163,9 +166,10 @@ check_status() {
     status_output=$(nlm status artifacts "$notebook_id" --json 2>/dev/null) || return 1
 
     # Use Python to parse JSON and find matching artifact (pass via stdin)
-    echo "$status_output" | python3 -c "
+    echo "$status_output" | NLM_ARTIFACT_TYPE="$artifact_type" python3 -c '
 import json
 import sys
+import os
 
 try:
     data = json.load(sys.stdin)
@@ -176,23 +180,23 @@ try:
 
     # Map artifact type to JSON type field value
     type_map = {
-        'audio': 'audio_overview',
-        'video': 'video_overview',
-        'report': 'report',
-        'quiz': 'quiz',
-        'flashcards': 'flashcards',
-        'mindmap': 'mindmap',
-        'slides': 'slides',
-        'infographic': 'infographic',
-        'data-table': 'data_table'
+        "audio": "audio_overview",
+        "video": "video_overview",
+        "report": "report",
+        "quiz": "quiz",
+        "flashcards": "flashcards",
+        "mindmap": "mindmap",
+        "slides": "slides",
+        "infographic": "infographic",
+        "data-table": "data_table"
     }
 
-    target_type = type_map.get('$artifact_type')
+    target_type = type_map.get(os.environ["NLM_ARTIFACT_TYPE"])
     if not target_type:
         sys.exit(1)
 
     # Find artifacts matching the requested type
-    matching_artifacts = [a for a in data if a.get('type') == target_type]
+    matching_artifacts = [a for a in data if a.get("type") == target_type]
 
     if not matching_artifacts:
         sys.exit(1)
@@ -201,16 +205,16 @@ try:
     artifact = matching_artifacts[-1]
 
     # Extract ID and status
-    artifact_id = artifact.get('id', '')
-    status = artifact.get('status', '')
+    artifact_id = artifact.get("id", "")
+    status = artifact.get("status", "")
 
     # Output: artifact_id|status
-    print(f'{artifact_id}|{status}')
+    print(f"{artifact_id}|{status}")
     sys.exit(0)
 
-except Exception as e:
+except Exception:
     sys.exit(1)
-"
+'
 }
 
 # If not waiting, just output the initial status
@@ -219,13 +223,13 @@ if [[ "$WAIT_FLAG" == false ]]; then
 
     result=$(check_status "$NOTEBOOK_ID" "$ARTIFACT_TYPE") || {
         warn "Could not retrieve artifact status immediately"
-        python3 -c "import json; print(json.dumps({'notebook_id': '$NOTEBOOK_ID', 'artifact_type': '$ARTIFACT_TYPE', 'artifact_id': None, 'status': 'initiated'}))"
+        NLM_NB_ID="$NOTEBOOK_ID" NLM_ATYPE="$ARTIFACT_TYPE" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "artifact_type": os.environ["NLM_ATYPE"], "artifact_id": None, "status": "initiated"}))'
         exit 0
     }
 
     IFS='|' read -r artifact_id status <<< "$result"
 
-    python3 -c "import json; print(json.dumps({'notebook_id': '$NOTEBOOK_ID', 'artifact_type': '$ARTIFACT_TYPE', 'artifact_id': '$artifact_id', 'status': '$status'}))"
+    NLM_NB_ID="$NOTEBOOK_ID" NLM_ATYPE="$ARTIFACT_TYPE" NLM_AID="$artifact_id" NLM_STATUS="$status" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "artifact_type": os.environ["NLM_ATYPE"], "artifact_id": os.environ["NLM_AID"], "status": os.environ["NLM_STATUS"]}))'
     exit 0
 fi
 
@@ -264,7 +268,7 @@ done
 # Check if we timed out
 if [[ $ATTEMPT -ge $MAX_ATTEMPTS ]]; then
     warn "Timeout: Artifact generation did not complete within 5 minutes"
-    python3 -c "import json; print(json.dumps({'notebook_id': '$NOTEBOOK_ID', 'artifact_type': '$ARTIFACT_TYPE', 'artifact_id': '$ARTIFACT_ID', 'status': '$STATUS'}))"
+    NLM_NB_ID="$NOTEBOOK_ID" NLM_ATYPE="$ARTIFACT_TYPE" NLM_AID="$ARTIFACT_ID" NLM_STATUS="$STATUS" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "artifact_type": os.environ["NLM_ATYPE"], "artifact_id": os.environ["NLM_AID"], "status": os.environ["NLM_STATUS"]}))'
     exit 1
 fi
 
@@ -295,4 +299,4 @@ if [[ -n "$DOWNLOAD_PATH" ]]; then
 fi
 
 # Output final JSON
-python3 -c "import json; print(json.dumps({'notebook_id': '$NOTEBOOK_ID', 'artifact_type': '$ARTIFACT_TYPE', 'artifact_id': '$ARTIFACT_ID', 'status': '$STATUS'}))"
+NLM_NB_ID="$NOTEBOOK_ID" NLM_ATYPE="$ARTIFACT_TYPE" NLM_AID="$ARTIFACT_ID" NLM_STATUS="$STATUS" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "artifact_type": os.environ["NLM_ATYPE"], "artifact_id": os.environ["NLM_AID"], "status": os.environ["NLM_STATUS"]}))'

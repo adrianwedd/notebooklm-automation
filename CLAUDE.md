@@ -89,7 +89,7 @@ python3 -m py_compile lib/*.py
 - `bash` 4.0+
 - `python3` 3.8+
 - `nlm` CLI (notebooklm-mcp-cli)
-- `jq` for JSON processing
+- (Optional) `jq` for JSON processing/validation
 
 **Optional:**
 - `gh` CLI for GitHub operations

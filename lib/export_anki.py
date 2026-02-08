@@ -5,12 +5,11 @@ Converts quiz and flashcard artifacts to CSV for Anki import.
 """
 import csv
 import json
-import os
 import sys
 from pathlib import Path
 
 
-def export_to_anki(notebook_dir: str, output_dir: str):
+def export_to_anki(notebook_dir: str, output_dir: str) -> None:
     """Export notebook to Anki format (CSV with Front,Back,Tags)."""
     notebook_path = Path(notebook_dir)
     output_path = Path(output_dir)

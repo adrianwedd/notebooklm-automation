@@ -4,12 +4,11 @@ Export NotebookLM notebook to Notion-compatible markdown format.
 Converts exported notebook structure to a single markdown file with callouts.
 """
 import json
-import os
 import sys
 from pathlib import Path
 
 
-def export_to_notion(notebook_dir: str, output_dir: str):
+def export_to_notion(notebook_dir: str, output_dir: str) -> None:
     """Export notebook to Notion format (single markdown with callouts)."""
     notebook_path = Path(notebook_dir)
     output_path = Path(output_dir)
