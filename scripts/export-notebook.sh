@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Export a NotebookLM notebook to a local directory structure.
-# Usage: ./export-notebook.sh <notebook-id-or-name> [--output DIR] [--format FORMAT] [--dry-run]
+# Usage: ./export-notebook.sh <notebook-id-or-name> [--output DIR] [--format FORMAT] [--match MODE] [--dry-run]
 
 show_help() {
   cat <<EOF
@@ -16,6 +16,9 @@ Arguments:
 Options:
   --output <dir>     Output directory (default: ./exports)
   --format <format>  Export format: notebooklm, obsidian, notion, anki (default: notebooklm)
+  --match <mode>     Name matching mode: contains, exact (default: contains)
+  --id <uuid>        Explicit notebook UUID (disables name matching)
+  --name <string>    Explicit notebook name query (disables UUID parsing of positional arg)
   --dry-run          Print planned export actions and exit without downloading
   -h, --help         Show this help message
 
@@ -23,6 +26,7 @@ Examples:
   ./export-notebook.sh "machine learning" --output ./exports
   ./export-notebook.sh abc-123-def-456 --format obsidian
   ./export-notebook.sh "research notes" --output ./out --format anki
+  ./export-notebook.sh --name "Research Notes" --match exact
 EOF
   exit 0
 }
@@ -32,6 +36,9 @@ NOTEBOOK_ARG=""
 BASE_OUTPUT="./exports"
 FORMAT="notebooklm"
 DRY_RUN=false
+MATCH_MODE="contains"
+EXPLICIT_ID=""
+EXPLICIT_NAME=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,6 +51,21 @@ while [[ $# -gt 0 ]]; do
       ;;
     --format)
       FORMAT="$2"
+      shift 2
+      ;;
+    --match)
+      [[ -z "${2:-}" ]] && { echo "Error: --match requires an argument" >&2; exit 1; }
+      MATCH_MODE="$2"
+      shift 2
+      ;;
+    --id)
+      [[ -z "${2:-}" ]] && { echo "Error: --id requires an argument" >&2; exit 1; }
+      EXPLICIT_ID="$2"
+      shift 2
+      ;;
+    --name)
+      [[ -z "${2:-}" ]] && { echo "Error: --name requires an argument" >&2; exit 1; }
+      EXPLICIT_NAME="$2"
       shift 2
       ;;
     --dry-run)
@@ -66,8 +88,21 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$NOTEBOOK_ARG" ]]; then
-  echo "Error: Missing required argument: notebook-id-or-name" >&2
+if [[ -n "$EXPLICIT_ID" && -n "$EXPLICIT_NAME" ]]; then
+  echo "Error: --id and --name are mutually exclusive" >&2
+  exit 1
+fi
+if [[ -n "$EXPLICIT_ID" && -n "$NOTEBOOK_ARG" ]]; then
+  echo "Error: provide either --id or a positional notebook-id-or-name, not both" >&2
+  exit 1
+fi
+if [[ -n "$EXPLICIT_NAME" && -n "$NOTEBOOK_ARG" ]]; then
+  echo "Error: provide either --name or a positional notebook-id-or-name, not both" >&2
+  exit 1
+fi
+
+if [[ -z "$NOTEBOOK_ARG" && -z "$EXPLICIT_ID" && -z "$EXPLICIT_NAME" ]]; then
+  echo "Error: Missing required notebook selector (positional arg, --id, or --name)" >&2
   echo "Try --help for usage." >&2
   exit 1
 fi
@@ -77,28 +112,87 @@ slugify() {
 }
 
 # --- Resolve notebook ID ---
-if [[ "$NOTEBOOK_ARG" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
-  NOTEBOOK_ID="$NOTEBOOK_ARG"
+NOTEBOOK_ID=""
+NOTEBOOK_QUERY=""
+
+if [[ -n "$EXPLICIT_ID" ]]; then
+  NOTEBOOK_ID="$EXPLICIT_ID"
+elif [[ -n "$EXPLICIT_NAME" ]]; then
+  NOTEBOOK_QUERY="$EXPLICIT_NAME"
 else
-  echo "Resolving notebook by name: $NOTEBOOK_ARG"
-  NOTEBOOK_ID=$(nlm notebook list 2>/dev/null | NLM_QUERY="$NOTEBOOK_ARG" python3 -c '
+  NOTEBOOK_QUERY="$NOTEBOOK_ARG"
+fi
+
+if [[ -z "$NOTEBOOK_ID" ]]; then
+  # If not explicitly specified as name, allow positional UUID detection.
+  if [[ -z "$EXPLICIT_NAME" && "$NOTEBOOK_QUERY" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+    NOTEBOOK_ID="$NOTEBOOK_QUERY"
+  else
+    case "$MATCH_MODE" in
+      contains|exact) ;;
+      *)
+        echo "Error: Invalid --match mode: $MATCH_MODE (expected: contains|exact)" >&2
+        exit 1
+        ;;
+    esac
+
+    echo "Resolving notebook by name: $NOTEBOOK_QUERY (match: $MATCH_MODE)"
+    set +e
+    NOTEBOOKS_JSON=$(nlm notebook list 2>&1)
+    LIST_EXIT=$?
+    set -e
+    if [[ $LIST_EXIT -ne 0 ]]; then
+      echo "Error: nlm notebook list failed:" >&2
+      echo "$NOTEBOOKS_JSON" >&2
+      exit 2
+    fi
+
+    NOTEBOOK_ID=$(echo "$NOTEBOOKS_JSON" | NLM_QUERY="$NOTEBOOK_QUERY" NLM_MATCH="$MATCH_MODE" python3 -c '
 import sys, json, os
 notebooks = json.load(sys.stdin)
 query = os.environ["NLM_QUERY"].lower()
-for nb in notebooks:
-    if query in nb["title"].lower():
-        print(nb["id"])
-        break
-else:
+match = os.environ.get("NLM_MATCH", "contains")
+
+def is_match(title: str) -> bool:
+    t = title.lower()
+    if match == "exact":
+        return t == query
+    return query in t
+
+candidates = [(nb.get("id", ""), nb.get("title", "")) for nb in notebooks if is_match(nb.get("title", ""))]
+
+if len(candidates) == 0:
     print("NOT_FOUND", file=sys.stderr)
-    sys.exit(1)
+    sys.exit(2)
+if len(candidates) > 1:
+    print("AMBIGUOUS", file=sys.stderr)
+    for i, (nid, title) in enumerate(candidates, 1):
+        print(f"{i}. {title} ({nid})", file=sys.stderr)
+    sys.exit(2)
+
+print(candidates[0][0])
 ')
+    if [[ "$NOTEBOOK_ID" == "AMBIGUOUS" || "$NOTEBOOK_ID" == "NOT_FOUND" || -z "$NOTEBOOK_ID" ]]; then
+      echo "Error: Notebook name lookup failed or ambiguous. Try --match exact or pass --id." >&2
+      exit 2
+    fi
+  fi
 fi
 
 echo "Notebook ID: $NOTEBOOK_ID"
 
 # --- Get notebook metadata ---
-NOTEBOOK_JSON=$(nlm notebook list 2>/dev/null | NLM_NB_ID="$NOTEBOOK_ID" python3 -c '
+set +e
+NOTEBOOKS_JSON=$(nlm notebook list 2>&1)
+LIST_EXIT=$?
+set -e
+if [[ $LIST_EXIT -ne 0 ]]; then
+  echo "Error: nlm notebook list failed:" >&2
+  echo "$NOTEBOOKS_JSON" >&2
+  exit 2
+fi
+
+NOTEBOOK_JSON=$(echo "$NOTEBOOKS_JSON" | NLM_NB_ID="$NOTEBOOK_ID" python3 -c '
 import sys, json, os
 notebooks = json.load(sys.stdin)
 target_id = os.environ["NLM_NB_ID"]
@@ -137,7 +231,15 @@ echo "  [+] metadata.json"
 
 # --- Export sources ---
 echo "  Exporting sources..."
-SOURCES=$(nlm source list "$NOTEBOOK_ID" 2>/dev/null)
+set +e
+SOURCES=$(nlm source list "$NOTEBOOK_ID" 2>&1)
+SOURCES_EXIT=$?
+set -e
+if [[ $SOURCES_EXIT -ne 0 ]]; then
+  echo "  [!] nlm source list failed; continuing with empty sources list" >&2
+  echo "$SOURCES" >&2
+  SOURCES="[]"
+fi
 echo "$SOURCES" > "$OUTPUT_DIR/sources/index.json"
 SOURCE_COUNT=$(echo "$SOURCES" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
 echo "  [+] sources/index.json ($SOURCE_COUNT sources)"
@@ -199,7 +301,15 @@ fi
 
 # --- Export studio artifacts ---
 echo "  Exporting studio artifacts..."
-ARTIFACTS=$(nlm list artifacts "$NOTEBOOK_ID" 2>/dev/null || echo "[]")
+set +e
+ARTIFACTS=$(nlm list artifacts "$NOTEBOOK_ID" 2>&1)
+ARTIFACTS_EXIT=$?
+set -e
+if [[ $ARTIFACTS_EXIT -ne 0 ]]; then
+  echo "  [!] nlm list artifacts failed; continuing with empty manifest" >&2
+  echo "$ARTIFACTS" >&2
+  ARTIFACTS="[]"
+fi
 echo "$ARTIFACTS" > "$OUTPUT_DIR/studio/manifest.json"
 ARTIFACT_COUNT=$(echo "$ARTIFACTS" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
 echo "  [+] studio/manifest.json ($ARTIFACT_COUNT artifacts)"
