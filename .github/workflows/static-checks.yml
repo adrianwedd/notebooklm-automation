@@ -21,6 +21,9 @@ jobs:
       - name: Python compile
         run: python3 -m py_compile lib/*.py
 
+      - name: Install jsonschema (for schema validation)
+        run: python3 -m pip install --disable-pip-version-check --no-cache-dir jsonschema
+
       - name: Validate template JSON
         run: |
           python3 - <<'PY'
@@ -33,3 +36,8 @@ jobs:
           print("templates JSON: ok")
           PY
 
+      - name: Validate templates against schema
+        run: |
+          while IFS= read -r f; do
+            ./scripts/validate-json.sh --schema schemas/template.schema.json --file "$f" >/dev/null
+          done < <(find templates -type f -name '*.json' -print)

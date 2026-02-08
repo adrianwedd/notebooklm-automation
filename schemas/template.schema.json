@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adrianwedd/notebooklm-automation/schemas/template.schema.json",
+  "title": "NotebookLM Template",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title"],
+  "properties": {
+    "title": { "type": "string", "minLength": 1 },
+    "smart_creation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "topic": { "type": "string" },
+        "depth": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "studio": {
+      "type": "array",
+      "items": { "$ref": "config.schema.json#/$defs/studioItem" }
+    },
+    "sources": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}
+

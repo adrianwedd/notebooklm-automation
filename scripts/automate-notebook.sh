@@ -60,6 +60,9 @@ section() {
     echo -e "${BLUE}==== $1 ====${NC}" >&2
 }
 
+# Find script directory (same directory as this script)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Show help
 show_help() {
     sed -n '/^# Usage:/,/^$/p' "$0" | sed 's/^# \?//'
@@ -107,6 +110,19 @@ done
 
 # Validate JSON
 python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$CONFIG_FILE" 2>/dev/null || error "Invalid JSON in config file: $CONFIG_FILE"
+
+# Validate against schema (if available)
+if [[ -x "$SCRIPT_DIR/validate-json.sh" && -f "$SCRIPT_DIR/../schemas/config.schema.json" ]]; then
+    set +e
+    "$SCRIPT_DIR/validate-json.sh" --schema "$SCRIPT_DIR/../schemas/config.schema.json" --file "$CONFIG_FILE" >/dev/null
+    SCHEMA_EXIT=$?
+    set -e
+    if [[ $SCHEMA_EXIT -eq 1 ]]; then
+        error "Config failed schema validation: $CONFIG_FILE"
+    elif [[ $SCHEMA_EXIT -eq 2 ]]; then
+        warn "Schema validation skipped (missing python dependency 'jsonschema'). See README Schemas section."
+    fi
+fi
 
 info "Loading config from: $CONFIG_FILE"
 
@@ -167,9 +183,6 @@ info "  Studio artifacts: $(echo "$STUDIO_JSON" | python3 -c 'import sys, json; 
 if [[ "$DRY_RUN" == true ]]; then
     warn "Dry-run mode enabled: no changes will be made."
 fi
-
-# Find script directory (same directory as this script)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Validate helper scripts exist
 [[ ! -x "$SCRIPT_DIR/create-notebook.sh" ]] && error "Helper script not found or not executable: create-notebook.sh"
