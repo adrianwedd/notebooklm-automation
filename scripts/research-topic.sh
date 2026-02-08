@@ -2,10 +2,13 @@
 set -euo pipefail
 
 # Smart notebook creation from topic research
-# Usage: ./research-topic.sh "<topic>" [--depth N] [--auto-generate types] [--no-retry]
+# Usage: ./research-topic.sh "<topic>" [--depth N] [--auto-generate types] [--allow-domains a,b] [--deny-domains x,y] [--mode scholarly] [--no-retry]
 
 DEPTH=3
 AUTO_GENERATE=""
+ALLOW_DOMAINS=""
+DENY_DOMAINS=""
+MODE=""
 NO_RETRY=false
 JSON_OUTPUT=true
 QUIET=false
@@ -43,6 +46,9 @@ Options:
   --verbose             Print additional diagnostics
   --depth <N>           Number of sources to find (default: 3)
   --auto-generate <types>  Comma-separated artifact types to generate
+  --allow-domains <a,b> Comma-separated allow-list of domains (optional)
+  --deny-domains <x,y>  Comma-separated deny-list of domains (optional)
+  --mode <name>         Source quality preset: scholarly (optional)
   --no-retry            Disable retry/backoff for nlm operations
   -h, --help             Show this help message
 
@@ -53,6 +59,12 @@ Examples:
   # Deep research with artifacts
   ./research-topic.sh "machine learning basics" --depth 10 \\
     --auto-generate quiz,report
+
+  # Prefer academic/government sources (heuristic)
+  ./research-topic.sh "protein folding" --depth 8 --mode scholarly
+
+  # Restrict sources to specific domains
+  ./research-topic.sh "climate change" --depth 6 --allow-domains nih.gov,who.int
 EOF
 }
 
@@ -85,6 +97,18 @@ while [[ $# -gt 0 ]]; do
       ;;
     --auto-generate)
       AUTO_GENERATE="$2"
+      shift 2
+      ;;
+    --allow-domains)
+      ALLOW_DOMAINS="$2"
+      shift 2
+      ;;
+    --deny-domains)
+      DENY_DOMAINS="$2"
+      shift 2
+      ;;
+    --mode)
+      MODE="$2"
       shift 2
       ;;
     --no-retry)
@@ -144,6 +168,15 @@ check_research_deps
 log_info "=== Smart Notebook Creation ==="
 log_info "Topic: $TOPIC"
 log_info "Depth: $DEPTH sources"
+if [[ -n "$MODE" ]]; then
+  log_info "Mode:  $MODE"
+fi
+if [[ -n "$ALLOW_DOMAINS" ]]; then
+  log_info "Allow: $ALLOW_DOMAINS"
+fi
+if [[ -n "$DENY_DOMAINS" ]]; then
+  log_info "Deny:  $DENY_DOMAINS"
+fi
 log_info ""
 
 # Step 1: Search for sources
@@ -151,7 +184,20 @@ log_info "[1/3] Searching for sources..."
 
 # Web search
 log_info "  Web search..."
-WEB_SOURCES=$(python3 "$SCRIPT_DIR/../lib/web_search.py" "$TOPIC" "$((DEPTH / 2))")
+WEB_ARGS=("$SCRIPT_DIR/../lib/web_search.py" "$TOPIC" "$((DEPTH / 2))")
+if [[ "$QUIET" != true ]]; then
+  WEB_ARGS+=(--explain)
+fi
+if [[ -n "$ALLOW_DOMAINS" ]]; then
+  WEB_ARGS+=(--allow-domains "$ALLOW_DOMAINS")
+fi
+if [[ -n "$DENY_DOMAINS" ]]; then
+  WEB_ARGS+=(--deny-domains "$DENY_DOMAINS")
+fi
+if [[ -n "$MODE" ]]; then
+  WEB_ARGS+=(--mode "$MODE")
+fi
+WEB_SOURCES=$(python3 "${WEB_ARGS[@]}")
 
 # Wikipedia search
 log_info "  Wikipedia search..."
@@ -179,6 +225,54 @@ PYEOF
 # Deduplicate
 log_info "  Deduplicating sources..."
 SOURCES_JSON=$(echo "$SOURCES_JSON" | python3 "$SCRIPT_DIR/../lib/deduplicate_sources.py" -)
+
+# Apply domain allow/deny across all sources (web + wiki), if requested.
+if [[ -n "$ALLOW_DOMAINS" || -n "$DENY_DOMAINS" ]]; then
+  log_info "  Filtering by domain allow/deny lists..."
+  SOURCES_JSON=$(echo "$SOURCES_JSON" | NLM_ALLOW="$ALLOW_DOMAINS" NLM_DENY="$DENY_DOMAINS" NLM_VERBOSE="$VERBOSE" NLM_QUIET="$QUIET" python3 -c '
+import json
+import os
+import sys
+from urllib.parse import urlparse
+
+allow = [d.strip().lstrip(".").lower() for d in os.environ.get("NLM_ALLOW","").split(",") if d.strip()]
+deny = [d.strip().lstrip(".").lower() for d in os.environ.get("NLM_DENY","").split(",") if d.strip()]
+verbose = os.environ.get("NLM_VERBOSE","false") == "true"
+quiet = os.environ.get("NLM_QUIET","false") == "true"
+
+def matches(netloc: str, domain: str) -> bool:
+  return netloc == domain or netloc.endswith("." + domain)
+
+data = json.load(sys.stdin)
+if not isinstance(data, list):
+  print("[]")
+  sys.exit(0)
+
+kept = []
+counts = {"deny": 0, "allow_miss": 0}
+for s in data:
+  url = s.get("url","")
+  netloc = urlparse(url).netloc.lower()
+  if netloc.startswith("www."):
+    netloc = netloc[4:]
+
+  if deny and any(matches(netloc, d) for d in deny):
+    counts["deny"] += 1
+    if verbose:
+      print(f"[domain_filter] deny: {url}", file=sys.stderr)
+    continue
+  if allow and not any(matches(netloc, d) for d in allow):
+    counts["allow_miss"] += 1
+    if verbose:
+      print(f"[domain_filter] allow_miss: {url}", file=sys.stderr)
+    continue
+  kept.append(s)
+
+if not quiet:
+  print(f"[domain_filter] filtered_out: deny={counts[\"deny\"]} allow_miss={counts[\"allow_miss\"]}", file=sys.stderr)
+print(json.dumps(kept))
+')
+fi
 
 # Final trim to depth
 SOURCES_JSON=$(echo "$SOURCES_JSON" | NLM_DEPTH="$DEPTH" python3 -c '

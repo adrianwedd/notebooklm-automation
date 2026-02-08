@@ -36,6 +36,9 @@ jobs:
       - name: Template engine self-test
         run: bash tests/template-engine-test.sh
 
+      - name: Web search filter self-test
+        run: bash tests/web-search-filter-test.sh
+
       - name: Python compile
         run: python3 -m py_compile lib/*.py
 
