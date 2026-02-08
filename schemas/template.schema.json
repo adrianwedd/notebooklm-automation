@@ -1,6 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/adrianwedd/notebooklm-automation/schemas/template.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "NotebookLM Template",
   "type": "object",
   "additionalProperties": false,
@@ -18,12 +17,43 @@
     },
     "studio": {
       "type": "array",
-      "items": { "$ref": "config.schema.json#/$defs/studioItem" }
+      "items": { "$ref": "#/definitions/studioItem" }
     },
     "sources": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 }
     }
+  },
+  "definitions": {
+    "studioItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "audio",
+            "video",
+            "report",
+            "quiz",
+            "flashcards",
+            "mindmap",
+            "slides",
+            "infographic",
+            "data-table"
+          ]
+        },
+        "description": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "const": "data-table" } }
+          },
+          "then": { "required": ["description"] }
+        }
+      ]
+    }
   }
 }
-
