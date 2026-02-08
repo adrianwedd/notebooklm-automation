@@ -390,11 +390,18 @@ if missing:
   print("Missing optional research dependencies: " + ", ".join(missing), file=sys.stderr)
   sys.exit(1)
 PY
-  DEPS_RC=$?
-  set -e
-  if [[ $DEPS_RC -ne 0 ]]; then
-    error "Smart creation requires optional Python deps. Install with: pip3 install -r requirements-research.txt"
-  fi
+	  DEPS_RC=$?
+	  set -e
+	  if [[ $DEPS_RC -ne 0 ]]; then
+	    echo "Error: Smart creation requires optional Python dependencies." >&2
+	    echo "" >&2
+	    echo "Install with:" >&2
+	    echo "  pip3 install -r requirements-research.txt" >&2
+	    echo "" >&2
+	    echo "If pip is blocked (externally-managed env), use a venv:" >&2
+	    echo "  python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements-research.txt" >&2
+	    exit 2
+	  fi
 
   # Use research-topic.sh for source discovery
   info "Searching for sources (depth: $SMART_DEPTH)..."
