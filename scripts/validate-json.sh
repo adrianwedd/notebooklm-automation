@@ -77,7 +77,7 @@ done
 [[ ! -f "$SCHEMA" ]] && { echo "Error: schema not found: $SCHEMA" >&2; exit 2; }
 [[ ! -f "$FILE" ]] && { echo "Error: file not found: $FILE" >&2; exit 2; }
 
-python3 - "$SCHEMA" "$FILE" <<'PY'
+NLM_QUIET="$QUIET" python3 - "$SCHEMA" "$FILE" <<'PY'
 import json
 import os
 import sys
@@ -85,7 +85,8 @@ import sys
 try:
     import jsonschema
 except Exception:
-    print("Error: missing python dependency 'jsonschema'. Install: python3 -m pip install jsonschema", file=sys.stderr)
+    if os.environ.get("NLM_QUIET", "false") != "true":
+        print("Error: missing python dependency 'jsonschema'. Install: python3 -m pip install jsonschema", file=sys.stderr)
     sys.exit(2)
 
 schema_path = sys.argv[1]
