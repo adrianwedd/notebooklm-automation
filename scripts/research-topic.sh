@@ -2,13 +2,14 @@
 set -euo pipefail
 
 # Smart notebook creation from topic research
-# Usage: ./research-topic.sh "<topic>" [--depth N] [--auto-generate types]
+# Usage: ./research-topic.sh "<topic>" [--depth N] [--auto-generate types] [--no-retry]
 
 TOPIC="${1:?Usage: research-topic.sh <topic> [options]}"
 shift
 
 DEPTH=3
 AUTO_GENERATE=""
+NO_RETRY=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Parse options
@@ -22,6 +23,10 @@ while [[ $# -gt 0 ]]; do
       AUTO_GENERATE="$2"
       shift 2
       ;;
+    --no-retry)
+      NO_RETRY=true
+      shift
+      ;;
     --help)
       cat <<EOF
 Usage: research-topic.sh <topic> [options]
@@ -34,6 +39,7 @@ Arguments:
 Options:
   --depth <N>           Number of sources to find (default: 3)
   --auto-generate <types>  Comma-separated artifact types to generate
+  --no-retry            Disable retry/backoff for nlm operations
 
 Examples:
   # Basic research
@@ -51,6 +57,45 @@ EOF
       ;;
   esac
 done
+
+if [[ "$NO_RETRY" == true ]]; then
+  export NLM_NO_RETRY=true
+fi
+
+NO_RETRY_FLAG=()
+if [[ "$NO_RETRY" == true ]]; then
+  NO_RETRY_FLAG+=(--no-retry)
+fi
+
+check_research_deps() {
+  set +e
+  python3 - <<'PY'
+import sys
+missing = []
+for mod in ("requests", "ddgs"):
+  try:
+    __import__(mod)
+  except Exception:
+    missing.append(mod)
+if missing:
+  print("ERROR:Missing optional research dependencies: " + ", ".join(missing), file=sys.stderr)
+  sys.exit(1)
+PY
+  local rc=$?
+  set -e
+  if [[ $rc -ne 0 ]]; then
+    echo "" >&2
+    echo "Smart research requires optional Python dependencies." >&2
+    echo "Install with:" >&2
+    echo "  pip3 install -r requirements-research.txt" >&2
+    echo "" >&2
+    echo "If pip is blocked (externally-managed env), use a venv:" >&2
+    echo "  python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements-research.txt" >&2
+    exit 2
+  fi
+}
+
+check_research_deps
 
 echo "=== Smart Notebook Creation ==="
 echo "Topic: $TOPIC"
@@ -132,8 +177,13 @@ for s in sources:
 
 while IFS= read -r url; do
   echo "    Adding: $url"
-  "$SCRIPT_DIR/add-sources.sh" "$NOTEBOOK_ID" "$url" > /dev/null 2>&1 || \
-    echo "      (failed, continuing)"
+  set +e
+  "$SCRIPT_DIR/add-sources.sh" "$NOTEBOOK_ID" "${NO_RETRY_FLAG[@]}" "$url" 2>&1 | sed 's/^/      /' >&2
+  ADD_RC=$?
+  set -e
+  if [[ $ADD_RC -ne 0 ]]; then
+    echo "      (failed, continuing)" >&2
+  fi
 done <<< "$SOURCE_URLS"
 
 # Step 3: Generate artifacts if requested
@@ -143,8 +193,13 @@ if [ -n "$AUTO_GENERATE" ]; then
 
   for artifact_type in "${TYPES[@]}"; do
     echo "  Generating: $artifact_type"
-    "$SCRIPT_DIR/generate-studio.sh" "$NOTEBOOK_ID" "$artifact_type" --wait \
-      > /dev/null 2>&1 || echo "    (failed)"
+    set +e
+    "$SCRIPT_DIR/generate-studio.sh" "$NOTEBOOK_ID" "$artifact_type" --wait "${NO_RETRY_FLAG[@]}" 2>&1 | sed 's/^/    /' >&2
+    GEN_RC=$?
+    set -e
+    if [[ $GEN_RC -ne 0 ]]; then
+      echo "    (failed)" >&2
+    fi
   done
 else
   echo "[3/3] No artifacts requested"

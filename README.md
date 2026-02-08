@@ -421,14 +421,20 @@ Generate studio artifacts programmatically with polling until completion.
 
 Automatically create research notebooks from topics with smart source discovery.
 
+**Requires optional research dependencies:** `requests` + `ddgs` (only for smart research features).
+```bash
+pip3 install -r requirements-research.txt
+```
+
 **Usage:**
 ```bash
-./scripts/research-topic.sh "<topic>" [--depth N] [--auto-generate TYPES]
+./scripts/research-topic.sh "<topic>" [--depth N] [--auto-generate TYPES] [--no-retry]
 ```
 
 **Options:**
 - `--depth <N>` - Number of sources to find (default: 3)
 - `--auto-generate <types>` - Comma-separated artifact types to generate
+- `--no-retry` - Disable retry/backoff for `nlm` operations
 
 **Features:**
 - DuckDuckGo web search for quality sources
