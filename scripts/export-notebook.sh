@@ -274,7 +274,7 @@ notebooks = json.load(sys.stdin)
 target_id = os.environ["NLM_NB_ID"]
 for nb in notebooks:
     if nb["id"] == target_id:
-        json.dump(nb, sys.stdout, indent=2)
+        json.dump(nb, sys.stdout, indent=2, sort_keys=True)
         break
 ')
 
@@ -318,22 +318,35 @@ if [[ $SOURCES_EXIT -ne 0 ]]; then
   echo "$SOURCES" >&2
   SOURCES="[]"
 fi
-echo "$SOURCES" > "$OUTPUT_DIR/sources/index.json"
+SOURCES_SORTED=$(echo "$SOURCES" | python3 -c '
+import json, sys
+try:
+  data = json.load(sys.stdin)
+except Exception:
+  data = []
+if isinstance(data, list):
+  data = sorted(data, key=lambda s: (s.get("id",""), s.get("title","")))
+else:
+  data = []
+json.dump(data, sys.stdout, indent=2, sort_keys=True)
+print()
+')
+echo "$SOURCES_SORTED" > "$OUTPUT_DIR/sources/index.json"
 SOURCE_COUNT=$(echo "$SOURCES" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len 2>/dev/null || echo 0)
 log_info "  [+] sources/index.json ($SOURCE_COUNT sources)"
 
 # Try to get source content for each source
-echo "$SOURCES" | python3 -c '
+echo "$SOURCES_SORTED" | python3 -c '
 import sys, json
 sources = json.load(sys.stdin)
 for s in sources:
     print(s["id"] + "|" + s["title"] + "|" + s["type"])
 ' 2>/dev/null | while IFS='|' read -r src_id src_title _src_type; do
   safe_name=$(echo "$src_title" | sed 's/[^a-zA-Z0-9._-]/_/g' | head -c 100)
-  content_file="$OUTPUT_DIR/sources/${safe_name}.md"
+  content_file="$OUTPUT_DIR/sources/${safe_name}--${src_id}.md"
   if retry_cmd "nlm content source" nlm content source "$src_id" -o "$content_file"; then
     if [ -s "$content_file" ]; then
-      log_info "  [+] sources/$safe_name.md"
+      log_info "  [+] sources/${safe_name}--${src_id}.md"
     else
       rm -f "$content_file"
     fi
@@ -363,17 +376,43 @@ if [[ $NOTES_EXIT -ne 0 ]]; then
   NOTES_OUTPUT="[]"
 fi
 if echo "$NOTES_OUTPUT" | python3 -c 'import sys, json; json.load(sys.stdin)' 2>/dev/null; then
-  echo "$NOTES_OUTPUT" > "$OUTPUT_DIR/notes/index.json"
+  NOTES_SORTED=$(echo "$NOTES_OUTPUT" | python3 -c '
+import json, sys
+try:
+  data = json.load(sys.stdin)
+except Exception:
+  data = []
+if isinstance(data, list):
+  data = sorted(data, key=lambda n: (n.get("title",""), n.get("id","")))
+else:
+  data = []
+json.dump(data, sys.stdout, indent=2, sort_keys=True)
+print()
+')
+  echo "$NOTES_SORTED" > "$OUTPUT_DIR/notes/index.json"
   NOTE_COUNT=$(echo "$NOTES_OUTPUT" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len)
   log_info "  [+] notes/index.json ($NOTE_COUNT notes)"
-  echo "$NOTES_OUTPUT" | python3 -c '
+  echo "$NOTES_SORTED" | python3 -c '
 import sys, json
 notes = json.load(sys.stdin)
+seen = set()
 for n in notes:
     title = n.get("title", "untitled")
     content = n.get("content", "")
-    safe = "".join(c if c.isalnum() or c in "._- " else "_" for c in title)[:80]
-    print(f"{safe}|||{content}")
+    nid = n.get("id", "")
+    safe = "".join(c if c.isalnum() or c in "._- " else "_" for c in title)[:80] or "untitled"
+    # Keep filenames unique and stable across runs.
+    if nid:
+        name = f"{safe}--{nid}"
+    else:
+        base = safe
+        name = base
+        i = 2
+        while name in seen:
+            name = f"{base}--{i}"
+            i += 1
+    seen.add(name)
+    print(f"{name}|||{content}")
 ' 2>/dev/null | while IFS='|||' read -r note_name note_content; do
     if [ -n "$note_name" ]; then
       echo "$note_content" > "$OUTPUT_DIR/notes/${note_name}.md"
@@ -396,7 +435,20 @@ if [[ $ARTIFACTS_EXIT -ne 0 ]]; then
   echo "$ARTIFACTS" >&2
   ARTIFACTS="[]"
 fi
-echo "$ARTIFACTS" > "$OUTPUT_DIR/studio/manifest.json"
+ARTIFACTS_SORTED=$(echo "$ARTIFACTS" | python3 -c '
+import json, sys
+try:
+  data = json.load(sys.stdin)
+except Exception:
+  data = []
+if isinstance(data, list):
+  data = sorted(data, key=lambda a: (a.get("type",""), a.get("id","")))
+else:
+  data = []
+json.dump(data, sys.stdout, indent=2, sort_keys=True)
+print()
+')
+echo "$ARTIFACTS_SORTED" > "$OUTPUT_DIR/studio/manifest.json"
 ARTIFACT_COUNT=$(echo "$ARTIFACTS" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len 2>/dev/null || echo 0)
 log_info "  [+] studio/manifest.json ($ARTIFACT_COUNT artifacts)"
 
@@ -414,10 +466,10 @@ download_artifact() {
   return 1
 }
 
-echo "$ARTIFACTS" | python3 -c '
+echo "$ARTIFACTS_SORTED" | python3 -c '
 import sys, json
 artifacts = json.load(sys.stdin)
-for a in artifacts:
+for a in sorted(artifacts, key=lambda a: (a.get("type",""), a.get("id",""))):
     if a.get("status") == "completed":
         print(a["id"] + "|" + a["type"])
 ' 2>/dev/null | while IFS='|' read -r art_id art_type; do
