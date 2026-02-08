@@ -33,6 +33,33 @@ debug() {
   fi
 }
 
+_nlm_capture_to_file() {
+  local out_file="$1"
+  shift
+  "$@" >"$out_file" 2>&1
+}
+
+# Capture output for an nlm call; only print on failure when --verbose is set.
+retry_cmd_capture_fail_verbose() {
+  local desc="$1"
+  shift
+
+  local tmp
+  tmp="$(mktemp -t nlm-capture.XXXXXX)"
+  if retry_cmd "$desc" _nlm_capture_to_file "$tmp" "$@"; then
+    rm -f "$tmp"
+    return 0
+  fi
+
+  local rc=$?
+  if [[ "$VERBOSE" == true && "$QUIET" != true ]]; then
+    echo "[nlm] $desc failed (exit $rc):" >&2
+    sed -n '1,200p' "$tmp" >&2 || true
+  fi
+  rm -f "$tmp"
+  return "$rc"
+}
+
 show_help() {
   cat <<EOF
 Usage: generate-parallel.sh <notebook-id> <types...> [options]
@@ -305,8 +332,8 @@ except Exception:
       log_info "  Downloading: $artifact_type"
       # Note: Download logic depends on nlm CLI support
       # This is a placeholder - actual download may not work for all types
-      retry_cmd "nlm download $artifact_type" nlm download "$artifact_type" "$NOTEBOOK_ID" \
-        -o "$DOWNLOAD_DIR/${artifact_type}" 1>/dev/null || \
+      retry_cmd_capture_fail_verbose "nlm download $artifact_type" nlm download "$artifact_type" "$NOTEBOOK_ID" \
+        -o "$DOWNLOAD_DIR/${artifact_type}" || \
         log_warn "    (download not supported for $artifact_type)"
     done
   fi

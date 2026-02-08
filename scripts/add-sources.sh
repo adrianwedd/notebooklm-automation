@@ -195,10 +195,15 @@ PY
 fi
 
 # Verify notebook exists
-if ! retry_cmd "nlm list sources (verify notebook)" nlm list sources "$NOTEBOOK_ID" >/dev/null; then
+VERIFY_TMP="$(mktemp -t nlm-verify.XXXXXX)"
+if ! retry_cmd "nlm list sources (verify notebook)" nlm list sources "$NOTEBOOK_ID" >"$VERIFY_TMP" 2>&1; then
+    echo "[nlm] nlm list sources (verify notebook) failed:" >&2
+    sed -n '1,200p' "$VERIFY_TMP" >&2 || true
+    rm -f "$VERIFY_TMP"
     log_error "${RED}Error: Notebook '$NOTEBOOK_ID' not found${NC}"
     exit 2
 fi
+rm -f "$VERIFY_TMP"
 
 # Counters
 SOURCES_ADDED=0

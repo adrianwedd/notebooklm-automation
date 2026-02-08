@@ -76,6 +76,53 @@ debug() {
     fi
 }
 
+_nlm_capture_to_file() {
+    local out_file="$1"
+    shift
+    "$@" >"$out_file" 2>&1
+}
+
+# Run an nlm command with retries while keeping stdout clean.
+# On failure, print captured output to stderr to avoid hiding actionable errors.
+retry_cmd_capture_fail() {
+    local desc="$1"
+    shift
+
+    local tmp
+    tmp="$(mktemp -t nlm-capture.XXXXXX)"
+    if retry_cmd "$desc" _nlm_capture_to_file "$tmp" "$@"; then
+        rm -f "$tmp"
+        return 0
+    fi
+
+    local rc=$?
+    echo "[nlm] $desc failed (exit $rc):" >&2
+    sed -n '1,200p' "$tmp" >&2 || true
+    rm -f "$tmp"
+    return "$rc"
+}
+
+# Capture output but only print it in verbose mode (useful for non-fatal operations like downloads).
+retry_cmd_capture_fail_verbose() {
+    local desc="$1"
+    shift
+
+    local tmp
+    tmp="$(mktemp -t nlm-capture.XXXXXX)"
+    if retry_cmd "$desc" _nlm_capture_to_file "$tmp" "$@"; then
+        rm -f "$tmp"
+        return 0
+    fi
+
+    local rc=$?
+    if [[ "$VERBOSE" == true && "$QUIET" != true ]]; then
+        echo "[nlm] $desc failed (exit $rc):" >&2
+        sed -n '1,200p' "$tmp" >&2 || true
+    fi
+    rm -f "$tmp"
+    return "$rc"
+}
+
 # Show help
 show_help() {
     sed -n '/^# Usage:/,/^$/p' "$0" | sed 's/^# \?//'
@@ -186,31 +233,31 @@ info "Creating $ARTIFACT_TYPE artifact for notebook $NOTEBOOK_ID..."
 
 case "$ARTIFACT_TYPE" in
     audio)
-        retry_cmd "nlm audio create" nlm audio create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create audio artifact"
+        retry_cmd_capture_fail "nlm audio create" nlm audio create "$NOTEBOOK_ID" -y || error "Failed to create audio artifact"
         ;;
     video)
-        retry_cmd "nlm video create" nlm video create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create video artifact"
+        retry_cmd_capture_fail "nlm video create" nlm video create "$NOTEBOOK_ID" -y || error "Failed to create video artifact"
         ;;
     report)
-        retry_cmd "nlm report create" nlm report create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create report artifact"
+        retry_cmd_capture_fail "nlm report create" nlm report create "$NOTEBOOK_ID" -y || error "Failed to create report artifact"
         ;;
     quiz)
-        retry_cmd "nlm quiz create" nlm quiz create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create quiz artifact"
+        retry_cmd_capture_fail "nlm quiz create" nlm quiz create "$NOTEBOOK_ID" -y || error "Failed to create quiz artifact"
         ;;
     flashcards)
-        retry_cmd "nlm flashcards create" nlm flashcards create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create flashcards artifact"
+        retry_cmd_capture_fail "nlm flashcards create" nlm flashcards create "$NOTEBOOK_ID" -y || error "Failed to create flashcards artifact"
         ;;
     mindmap)
-        retry_cmd "nlm mindmap create" nlm mindmap create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create mindmap artifact"
+        retry_cmd_capture_fail "nlm mindmap create" nlm mindmap create "$NOTEBOOK_ID" -y || error "Failed to create mindmap artifact"
         ;;
     slides)
-        retry_cmd "nlm slides create" nlm slides create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create slides artifact"
+        retry_cmd_capture_fail "nlm slides create" nlm slides create "$NOTEBOOK_ID" -y || error "Failed to create slides artifact"
         ;;
     infographic)
-        retry_cmd "nlm infographic create" nlm infographic create "$NOTEBOOK_ID" -y >/dev/null || error "Failed to create infographic artifact"
+        retry_cmd_capture_fail "nlm infographic create" nlm infographic create "$NOTEBOOK_ID" -y || error "Failed to create infographic artifact"
         ;;
     data-table)
-        retry_cmd "nlm data-table create" nlm data-table create "$NOTEBOOK_ID" "$DESCRIPTION" -y >/dev/null || error "Failed to create data-table artifact"
+        retry_cmd_capture_fail "nlm data-table create" nlm data-table create "$NOTEBOOK_ID" "$DESCRIPTION" -y || error "Failed to create data-table artifact"
         ;;
 esac
 
@@ -345,14 +392,14 @@ if [[ -n "$DOWNLOAD_PATH" ]]; then
     # Try to download using nlm CLI
     case "$ARTIFACT_TYPE" in
         audio)
-            if retry_cmd "nlm download audio" nlm download audio "$NOTEBOOK_ID" -o "$DOWNLOAD_PATH" 1>/dev/null; then
+            if retry_cmd_capture_fail_verbose "nlm download audio" nlm download audio "$NOTEBOOK_ID" -o "$DOWNLOAD_PATH"; then
                 info "Download successful: $DOWNLOAD_PATH"
             else
                 warn "Download failed for $ARTIFACT_TYPE (nlm CLI limitation or transient error)"
             fi
             ;;
         video)
-            if retry_cmd "nlm download video" nlm download video "$NOTEBOOK_ID" -o "$DOWNLOAD_PATH" 1>/dev/null; then
+            if retry_cmd_capture_fail_verbose "nlm download video" nlm download video "$NOTEBOOK_ID" -o "$DOWNLOAD_PATH"; then
                 info "Download successful: $DOWNLOAD_PATH"
             else
                 warn "Download failed for $ARTIFACT_TYPE (nlm CLI limitation or transient error)"

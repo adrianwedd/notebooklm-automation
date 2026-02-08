@@ -28,6 +28,33 @@ debug() {
   fi
 }
 
+_nlm_capture_to_file() {
+  local out_file="$1"
+  shift
+  "$@" >"$out_file" 2>&1
+}
+
+# Capture output for an nlm call; only print on failure when --verbose is set.
+retry_cmd_capture_fail_verbose() {
+  local desc="$1"
+  shift
+
+  local tmp
+  tmp="$(mktemp -t nlm-capture.XXXXXX)"
+  if retry_cmd "$desc" _nlm_capture_to_file "$tmp" "$@"; then
+    rm -f "$tmp"
+    return 0
+  fi
+
+  local rc=$?
+  if [[ "$VERBOSE" == true && "$QUIET" != true ]]; then
+    echo "[nlm] $desc failed (exit $rc):" >&2
+    sed -n '1,200p' "$tmp" >&2 || true
+  fi
+  rm -f "$tmp"
+  return "$rc"
+}
+
 show_help() {
   cat <<EOF
 Usage: export-notebook.sh <notebook-id-or-name> [options]
@@ -375,7 +402,7 @@ log_info "  [+] studio/manifest.json ($ARTIFACT_COUNT artifacts)"
 
 download_artifact() {
   local atype="$1" aid="$2" outpath="$3"
-  if retry_cmd "nlm download $atype" nlm download "$atype" "$NOTEBOOK_ID" --id "$aid" -o "$outpath" --no-progress 1>/dev/null; then
+  if retry_cmd_capture_fail_verbose "nlm download $atype" nlm download "$atype" "$NOTEBOOK_ID" --id "$aid" -o "$outpath" --no-progress; then
     if [ -f "$outpath" ] && [ -s "$outpath" ]; then
       local size_bytes
       size_bytes=$(wc -c <"$outpath" | tr -d ' ')
