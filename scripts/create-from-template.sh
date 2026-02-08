@@ -8,6 +8,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATES_DIR="$SCRIPT_DIR/../templates"
 SCHEMA_FILE="$SCRIPT_DIR/../schemas/config.schema.json"
 
+JSON_OUTPUT=true
+QUIET=false
+VERBOSE=false
+
+log_info() {
+  if [[ "$QUIET" != true ]]; then
+    echo "$1" >&2
+  fi
+}
+
+log_warn() {
+  echo "$1" >&2
+}
+
+debug() {
+  if [[ "$VERBOSE" == true && "$QUIET" != true ]]; then
+    echo "Debug: $1" >&2
+  fi
+}
+
 show_help() {
   cat <<EOF
 Usage: create-from-template.sh <template-id> [--var key=value ...]
@@ -18,6 +38,9 @@ Arguments:
   template-id    Template identifier (e.g., research/academic-paper)
 
 Options:
+  --json             Emit JSON summary on stdout (default)
+  --quiet            Suppress non-critical logs
+  --verbose          Print additional diagnostics
   --var KEY=VALUE    Set a template variable (can be repeated)
   -h, --help         Show this help message
 
@@ -52,6 +75,18 @@ VAR_PAIRS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --json)
+      JSON_OUTPUT=true
+      shift
+      ;;
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    --verbose)
+      VERBOSE=true
+      shift
+      ;;
     --var)
       # Parse key=value
       if [[ "$2" =~ ^([^=]+)=(.+)$ ]]; then
@@ -84,10 +119,10 @@ print(json.dumps(variables))
 ' "${VAR_PAIRS[@]}")
 fi
 
-echo "=== Creating Notebook from Template ==="
-echo "Template: $TEMPLATE_ID"
-echo "Variables: $VARIABLES_JSON"
-echo ""
+log_info "=== Creating Notebook from Template ==="
+log_info "Template: $TEMPLATE_ID"
+log_info "Variables: $VARIABLES_JSON"
+log_info ""
 
 # Find template file
 TEMPLATE_FILE="$TEMPLATES_DIR/${TEMPLATE_ID}.json"
@@ -98,7 +133,7 @@ if [[ ! -f "$TEMPLATE_FILE" ]]; then
 fi
 
 # Render template
-echo "Rendering template..."
+log_info "Rendering template..."
 CONFIG_JSON=$(echo "$VARIABLES_JSON" | python3 "$SCRIPT_DIR/../lib/template_engine.py" render "$TEMPLATE_FILE")
 
 # Validate rendered config (if validator + schema are present)
@@ -125,10 +160,21 @@ TEMP_CONFIG=$(mktemp -t nlm-template.XXXXXX)
 trap 'rm -f "$TEMP_CONFIG"' EXIT
 echo "$CONFIG_JSON" > "$TEMP_CONFIG"
 
-echo "Configuration:"
-cat "$TEMP_CONFIG"
-echo ""
+log_info "Configuration:"
+cat "$TEMP_CONFIG" >&2
+log_info ""
 
 # Create notebook
-echo "Creating notebook..."
-"$SCRIPT_DIR/automate-notebook.sh" --config "$TEMP_CONFIG"
+log_info "Creating notebook..."
+AUTOMATE_ARGS=("$SCRIPT_DIR/automate-notebook.sh" --config "$TEMP_CONFIG")
+if [[ "$QUIET" == true ]]; then
+  AUTOMATE_ARGS+=(--quiet)
+fi
+if [[ "$VERBOSE" == true ]]; then
+  AUTOMATE_ARGS+=(--verbose)
+fi
+if [[ "$JSON_OUTPUT" == true ]]; then
+  "${AUTOMATE_ARGS[@]}"
+else
+  "${AUTOMATE_ARGS[@]}" 1>&2
+fi

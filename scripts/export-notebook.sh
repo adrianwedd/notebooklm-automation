@@ -8,6 +8,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/retry.sh"
 
+JSON_OUTPUT=true
+QUIET=false
+VERBOSE=false
+
+log_info() {
+  if [[ "$QUIET" != true ]]; then
+    echo "$1" >&2
+  fi
+}
+
+log_warn() {
+  echo "$1" >&2
+}
+
+debug() {
+  if [[ "$VERBOSE" == true && "$QUIET" != true ]]; then
+    echo "Debug: $1" >&2
+  fi
+}
+
 show_help() {
   cat <<EOF
 Usage: export-notebook.sh <notebook-id-or-name> [options]
@@ -18,6 +38,9 @@ Arguments:
   notebook-id-or-name    Notebook UUID or name substring (case-insensitive)
 
 Options:
+  --json             Emit JSON summary on stdout (default)
+  --quiet            Suppress non-critical logs
+  --verbose          Print additional diagnostics
   --output <dir>     Output directory (default: ./exports)
   --format <format>  Export format: notebooklm, obsidian, notion, anki (default: notebooklm)
   --match <mode>     Name matching mode: contains, exact (default: contains)
@@ -50,6 +73,18 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)
       show_help
+      ;;
+    --json)
+      JSON_OUTPUT=true
+      shift
+      ;;
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    --verbose)
+      VERBOSE=true
+      shift
       ;;
     --output)
       BASE_OUTPUT="$2"
@@ -150,7 +185,7 @@ if [[ -z "$NOTEBOOK_ID" ]]; then
         ;;
     esac
 
-    echo "Resolving notebook by name: $NOTEBOOK_QUERY (match: $MATCH_MODE)"
+    log_info "Resolving notebook by name: $NOTEBOOK_QUERY (match: $MATCH_MODE)"
     set +e
     NOTEBOOKS_JSON=$(retry_cmd "nlm notebook list" nlm notebook list 2>&1)
     LIST_EXIT=$?
@@ -193,7 +228,7 @@ print(candidates[0][0])
   fi
 fi
 
-echo "Notebook ID: $NOTEBOOK_ID"
+log_info "Notebook ID: $NOTEBOOK_ID"
 
 # --- Get notebook metadata ---
 set +e
@@ -224,15 +259,17 @@ if [ -z "$SLUG" ]; then
 fi
 
 OUTPUT_DIR="$BASE_OUTPUT/$SLUG"
-echo "Exporting: $TITLE"
-echo "Output:    $OUTPUT_DIR"
+log_info "Exporting: $TITLE"
+log_info "Output:    $OUTPUT_DIR"
 
 if [[ "$DRY_RUN" == true ]]; then
   echo "Dry-run: would create directory structure and export sources/notes/artifacts" >&2
   if [[ "$FORMAT" != "notebooklm" ]]; then
     echo "Dry-run: would run format conversion to $FORMAT" >&2
   fi
-  NLM_OUT="$OUTPUT_DIR" NLM_FMT="$FORMAT" python3 -c 'import json, os; print(json.dumps({"dry_run": True, "output_dir": os.environ["NLM_OUT"], "format": os.environ["NLM_FMT"]}))'
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    NLM_OUT="$OUTPUT_DIR" NLM_FMT="$FORMAT" python3 -c 'import json, os; print(json.dumps({"dry_run": True, "output_dir": os.environ["NLM_OUT"], "format": os.environ["NLM_FMT"]}))'
+  fi
   exit 0
 fi
 
@@ -241,10 +278,10 @@ mkdir -p "$OUTPUT_DIR"/{sources,chat,notes,studio/{audio,video,documents,visual,
 
 # --- Save metadata ---
 echo "$NOTEBOOK_JSON" > "$OUTPUT_DIR/metadata.json"
-echo "  [+] metadata.json"
+log_info "  [+] metadata.json"
 
 # --- Export sources ---
-echo "  Exporting sources..."
+log_info "  Exporting sources..."
 set +e
 SOURCES=$(retry_cmd "nlm source list" nlm source list "$NOTEBOOK_ID" 2>&1)
 SOURCES_EXIT=$?
@@ -256,7 +293,7 @@ if [[ $SOURCES_EXIT -ne 0 ]]; then
 fi
 echo "$SOURCES" > "$OUTPUT_DIR/sources/index.json"
 SOURCE_COUNT=$(echo "$SOURCES" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len 2>/dev/null || echo 0)
-echo "  [+] sources/index.json ($SOURCE_COUNT sources)"
+log_info "  [+] sources/index.json ($SOURCE_COUNT sources)"
 
 # Try to get source content for each source
 echo "$SOURCES" | python3 -c '
@@ -269,7 +306,7 @@ for s in sources:
   content_file="$OUTPUT_DIR/sources/${safe_name}.md"
   if retry_cmd "nlm content source" nlm content source "$src_id" -o "$content_file"; then
     if [ -s "$content_file" ]; then
-      echo "  [+] sources/$safe_name.md"
+      log_info "  [+] sources/$safe_name.md"
     else
       rm -f "$content_file"
     fi
@@ -283,12 +320,12 @@ done
 # The conversation cache in notebooklm-mcp-cli is only for maintaining context
 # during active chat sessions, not for retrieving past conversations.
 # Chat history export is not currently supported by the underlying API.
-echo "  [.] Chat history export not supported by NotebookLM API"
+log_info "  [.] Chat history export not supported by NotebookLM API"
 mkdir -p "$OUTPUT_DIR/chat"
 echo "[]" > "$OUTPUT_DIR/chat/index.json"
 
 # --- Export notes ---
-echo "  Exporting notes..."
+log_info "  Exporting notes..."
 set +e
 NOTES_OUTPUT=$(retry_cmd "nlm note list" nlm note list "$NOTEBOOK_ID" 2>&1)
 NOTES_EXIT=$?
@@ -301,7 +338,7 @@ fi
 if echo "$NOTES_OUTPUT" | python3 -c 'import sys, json; json.load(sys.stdin)' 2>/dev/null; then
   echo "$NOTES_OUTPUT" > "$OUTPUT_DIR/notes/index.json"
   NOTE_COUNT=$(echo "$NOTES_OUTPUT" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len)
-  echo "  [+] notes/index.json ($NOTE_COUNT notes)"
+  log_info "  [+] notes/index.json ($NOTE_COUNT notes)"
   echo "$NOTES_OUTPUT" | python3 -c '
 import sys, json
 notes = json.load(sys.stdin)
@@ -313,16 +350,16 @@ for n in notes:
 ' 2>/dev/null | while IFS='|||' read -r note_name note_content; do
     if [ -n "$note_name" ]; then
       echo "$note_content" > "$OUTPUT_DIR/notes/${note_name}.md"
-      echo "  [+] notes/${note_name}.md"
+      log_info "  [+] notes/${note_name}.md"
     fi
   done
 else
-  echo "  [.] No notes found"
+  log_info "  [.] No notes found"
   echo "[]" > "$OUTPUT_DIR/notes/index.json"
 fi
 
 # --- Export studio artifacts ---
-echo "  Exporting studio artifacts..."
+log_info "  Exporting studio artifacts..."
 set +e
 ARTIFACTS=$(retry_cmd "nlm list artifacts" nlm list artifacts "$NOTEBOOK_ID" 2>&1)
 ARTIFACTS_EXIT=$?
@@ -334,7 +371,7 @@ if [[ $ARTIFACTS_EXIT -ne 0 ]]; then
 fi
 echo "$ARTIFACTS" > "$OUTPUT_DIR/studio/manifest.json"
 ARTIFACT_COUNT=$(echo "$ARTIFACTS" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len 2>/dev/null || echo 0)
-echo "  [+] studio/manifest.json ($ARTIFACT_COUNT artifacts)"
+log_info "  [+] studio/manifest.json ($ARTIFACT_COUNT artifacts)"
 
 download_artifact() {
   local atype="$1" aid="$2" outpath="$3"
@@ -342,7 +379,7 @@ download_artifact() {
     if [ -f "$outpath" ] && [ -s "$outpath" ]; then
       local size_bytes
       size_bytes=$(wc -c <"$outpath" | tr -d ' ')
-      echo "  [+] $outpath (${size_bytes} bytes)"
+      log_info "  [+] $outpath (${size_bytes} bytes)"
       return 0
     fi
   fi
@@ -386,15 +423,15 @@ for a in artifacts:
       download_artifact data-table "$art_id" "$OUTPUT_DIR/studio/interactive/${art_id}-data-table.csv" || true
       ;;
     *)
-      echo "  [?] Unknown artifact type: $art_type ($art_id)"
+      log_warn "  [?] Unknown artifact type: $art_type ($art_id)"
       ;;
   esac
 done
 
 # --- Format conversion ---
 if [[ "$FORMAT" != "notebooklm" ]]; then
-  echo ""
-  echo "Converting to $FORMAT format..."
+  log_info ""
+  log_info "Converting to $FORMAT format..."
 
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -403,31 +440,44 @@ if [[ "$FORMAT" != "notebooklm" ]]; then
       OBSIDIAN_DIR="$OUTPUT_DIR-obsidian"
       python3 "$SCRIPT_DIR/../lib/export_obsidian.py" \
         "$OUTPUT_DIR" "$OBSIDIAN_DIR"
-      echo ""
-      echo "Obsidian vault: $OBSIDIAN_DIR"
+      log_info ""
+      log_info "Obsidian vault: $OBSIDIAN_DIR"
       ;;
     notion)
       NOTION_DIR="$OUTPUT_DIR-notion"
       python3 "$SCRIPT_DIR/../lib/export_notion.py" \
         "$OUTPUT_DIR" "$NOTION_DIR"
-      echo "Notion file: $NOTION_DIR"
+      log_info "Notion file: $NOTION_DIR"
       ;;
     anki)
       ANKI_DIR="$OUTPUT_DIR-anki"
       python3 "$SCRIPT_DIR/../lib/export_anki.py" \
         "$OUTPUT_DIR" "$ANKI_DIR"
-      echo "Anki CSV: $ANKI_DIR"
+      log_info "Anki CSV: $ANKI_DIR"
       ;;
     *)
-      echo "Warning: Unknown format: $FORMAT (using default)"
+      log_warn "Warning: Unknown format: $FORMAT (using default)"
       ;;
   esac
 fi
 
 # --- Summary ---
-echo ""
-echo "Export complete: $OUTPUT_DIR"
-echo "  Metadata:  metadata.json"
-echo "  Sources:   $SOURCE_COUNT"
-echo "  Artifacts: $ARTIFACT_COUNT"
-du -sh "$OUTPUT_DIR" | awk '{print "  Total size: " $1}'
+log_info ""
+log_info "Export complete: $OUTPUT_DIR"
+log_info "  Metadata:  metadata.json"
+log_info "  Sources:   $SOURCE_COUNT"
+log_info "  Artifacts: $ARTIFACT_COUNT"
+du -sh "$OUTPUT_DIR" | awk '{print "  Total size: " $1}' >&2
+
+if [[ "$JSON_OUTPUT" == true ]]; then
+  NLM_NB_ID="$NOTEBOOK_ID" NLM_TITLE="$TITLE" NLM_OUT="$OUTPUT_DIR" NLM_SOURCES="$SOURCE_COUNT" NLM_ARTIFACTS="$ARTIFACT_COUNT" NLM_FORMAT="$FORMAT" python3 -c '
+import json, os
+print(json.dumps({
+  "notebook_id": os.environ["NLM_NB_ID"],
+  "title": os.environ["NLM_TITLE"],
+  "output_dir": os.environ["NLM_OUT"],
+  "format": os.environ["NLM_FORMAT"],
+  "sources": int(os.environ["NLM_SOURCES"]),
+  "artifacts": int(os.environ["NLM_ARTIFACTS"])
+}))'
+fi

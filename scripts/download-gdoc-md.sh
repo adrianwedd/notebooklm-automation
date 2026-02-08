@@ -6,12 +6,15 @@
 # Requires browser cookies for authentication.
 #
 # Usage:
-#   download-gdoc-md.sh <doc_url_or_id> [--output <file>] [--cookies <file>] [--help]
+#   download-gdoc-md.sh <doc_url_or_id> [--output <file>] [--cookies <file>] [--json] [--quiet] [--verbose] [--help]
 #
 # Arguments:
 #   <doc_url_or_id>     Google Docs URL or document ID
 #   --output <file>     Output file path (default: <doc_title>.md)
 #   --cookies <file>    Path to cookies file (Netscape format, default: cookies.txt)
+#   --json              Emit JSON summary on stdout (default)
+#   --quiet             Suppress non-critical logs
+#   --verbose           Print additional diagnostics
 #
 # Examples:
 #   # Download by URL
@@ -29,6 +32,25 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COOKIES_FILE="${SCRIPT_DIR}/../cookies.txt"
 OUTPUT_FILE=""
 DOC_INPUT=""
+JSON_OUTPUT=true
+QUIET=false
+VERBOSE=false
+
+log_info() {
+    if [[ "$QUIET" != true ]]; then
+        echo "$1" >&2
+    fi
+}
+
+log_warn() {
+    echo "$1" >&2
+}
+
+debug() {
+    if [[ "$VERBOSE" == true && "$QUIET" != true ]]; then
+        echo "Debug: $1" >&2
+    fi
+}
 
 # --- Help ---
 show_help() {
@@ -40,6 +62,9 @@ show_help() {
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --help|-h) show_help ;;
+        --json) JSON_OUTPUT=true; shift ;;
+        --quiet) QUIET=true; shift ;;
+        --verbose) VERBOSE=true; shift ;;
         --output|-o) OUTPUT_FILE="$2"; shift 2 ;;
         --cookies|-c) COOKIES_FILE="$2"; shift 2 ;;
         *) DOC_INPUT="$1"; shift ;;
@@ -68,7 +93,7 @@ extract_doc_id() {
 }
 
 DOC_ID=$(extract_doc_id "$DOC_INPUT")
-echo "Document ID: $DOC_ID" >&2
+log_info "Document ID: $DOC_ID"
 
 # --- Check cookies ---
 if [[ ! -f "$COOKIES_FILE" ]]; then
@@ -84,7 +109,7 @@ fi
 
 # --- Build export URL ---
 EXPORT_URL="https://docs.google.com/document/d/${DOC_ID}/export?format=md"
-echo "Export URL: $EXPORT_URL" >&2
+log_info "Export URL: $EXPORT_URL"
 
 # --- Determine output filename ---
 if [[ -z "$OUTPUT_FILE" ]]; then
@@ -106,7 +131,7 @@ if [[ -z "$OUTPUT_FILE" ]]; then
     fi
 fi
 
-echo "Output: $OUTPUT_FILE" >&2
+log_info "Output: $OUTPUT_FILE"
 
 # --- Download ---
 HTTP_CODE=$(curl -s -L -b "$COOKIES_FILE" \
@@ -116,10 +141,16 @@ HTTP_CODE=$(curl -s -L -b "$COOKIES_FILE" \
 
 if [[ "$HTTP_CODE" == "200" ]]; then
     FILE_SIZE=$(wc -c < "$OUTPUT_FILE" | tr -d ' ')
-    echo "Downloaded: $OUTPUT_FILE ($FILE_SIZE bytes)" >&2
-    echo "$OUTPUT_FILE"
+    log_info "Downloaded: $OUTPUT_FILE ($FILE_SIZE bytes)"
+    if [[ "$JSON_OUTPUT" == true ]]; then
+        NLM_OUT="$OUTPUT_FILE" NLM_SIZE="$FILE_SIZE" python3 -c '
+import json, os
+print(json.dumps({"output_file": os.environ["NLM_OUT"], "bytes": int(os.environ["NLM_SIZE"])}))'
+    else
+        echo "$OUTPUT_FILE"
+    fi
 else
-    echo "Error: Download failed with HTTP $HTTP_CODE" >&2
+    log_warn "Error: Download failed with HTTP $HTTP_CODE"
     rm -f "$OUTPUT_FILE"
     exit 1
 fi

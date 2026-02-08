@@ -10,6 +10,9 @@
 #   type           Artifact type: audio, video, report, quiz, flashcards, mindmap, slides, infographic, data-table
 #
 # Options:
+#   --json                  Emit JSON summary on stdout (default)
+#   --quiet                 Suppress non-critical logs
+#   --verbose               Print additional diagnostics
 #   --wait                  Poll until artifact generation completes (checks every 5s, timeout 5min)
 #   --download <path>       Download artifact to specified path (implies --wait)
 #   --description <desc>    Description for data-table (required for data-table type)
@@ -47,6 +50,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/retry.sh"
 
+JSON_OUTPUT=true
+QUIET=false
+VERBOSE=false
+
 # Error handling
 error() {
     echo -e "${RED}Error: $1${NC}" >&2
@@ -54,11 +61,19 @@ error() {
 }
 
 info() {
-    echo -e "${GREEN}$1${NC}" >&2
+    if [[ "$QUIET" != true ]]; then
+        echo -e "${GREEN}$1${NC}" >&2
+    fi
 }
 
 warn() {
     echo -e "${YELLOW}$1${NC}" >&2
+}
+
+debug() {
+    if [[ "$VERBOSE" == true ]]; then
+        echo -e "${YELLOW}Debug:${NC} $1" >&2
+    fi
 }
 
 # Show help
@@ -80,6 +95,18 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --help)
             show_help
+            ;;
+        --json)
+            JSON_OUTPUT=true
+            shift
+            ;;
+        --quiet)
+            QUIET=true
+            shift
+            ;;
+        --verbose)
+            VERBOSE=true
+            shift
             ;;
         --wait)
             WAIT_FLAG=true
@@ -148,7 +175,9 @@ if [[ "$DRY_RUN" == true ]]; then
     else
         info "Dry-run: would create $ARTIFACT_TYPE artifact for notebook $NOTEBOOK_ID"
     fi
-    NLM_NB_ID="$NOTEBOOK_ID" NLM_ATYPE="$ARTIFACT_TYPE" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "artifact_type": os.environ["NLM_ATYPE"], "dry_run": True}))'
+    if [[ "$JSON_OUTPUT" == true ]]; then
+        NLM_NB_ID="$NOTEBOOK_ID" NLM_ATYPE="$ARTIFACT_TYPE" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "artifact_type": os.environ["NLM_ATYPE"], "dry_run": True}))'
+    fi
     exit 0
 fi
 
@@ -254,13 +283,17 @@ if [[ "$WAIT_FLAG" == false ]]; then
 
     result=$(check_status "$NOTEBOOK_ID" "$ARTIFACT_TYPE") || {
         warn "Could not retrieve artifact status immediately"
-        NLM_NB_ID="$NOTEBOOK_ID" NLM_ATYPE="$ARTIFACT_TYPE" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "artifact_type": os.environ["NLM_ATYPE"], "artifact_id": None, "status": "initiated"}))'
+        if [[ "$JSON_OUTPUT" == true ]]; then
+            NLM_NB_ID="$NOTEBOOK_ID" NLM_ATYPE="$ARTIFACT_TYPE" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "artifact_type": os.environ["NLM_ATYPE"], "artifact_id": None, "status": "initiated"}))'
+        fi
         exit 0
     }
 
     IFS='|' read -r artifact_id status <<< "$result"
 
-    NLM_NB_ID="$NOTEBOOK_ID" NLM_ATYPE="$ARTIFACT_TYPE" NLM_AID="$artifact_id" NLM_STATUS="$status" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "artifact_type": os.environ["NLM_ATYPE"], "artifact_id": os.environ["NLM_AID"], "status": os.environ["NLM_STATUS"]}))'
+    if [[ "$JSON_OUTPUT" == true ]]; then
+        NLM_NB_ID="$NOTEBOOK_ID" NLM_ATYPE="$ARTIFACT_TYPE" NLM_AID="$artifact_id" NLM_STATUS="$status" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "artifact_type": os.environ["NLM_ATYPE"], "artifact_id": os.environ["NLM_AID"], "status": os.environ["NLM_STATUS"]}))'
+    fi
     exit 0
 fi
 
@@ -299,7 +332,9 @@ done
 # Check if we timed out
 if [[ $ATTEMPT -ge $MAX_ATTEMPTS ]]; then
     warn "Timeout: Artifact generation did not complete within 5 minutes"
-    NLM_NB_ID="$NOTEBOOK_ID" NLM_ATYPE="$ARTIFACT_TYPE" NLM_AID="$ARTIFACT_ID" NLM_STATUS="$STATUS" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "artifact_type": os.environ["NLM_ATYPE"], "artifact_id": os.environ["NLM_AID"], "status": os.environ["NLM_STATUS"]}))'
+    if [[ "$JSON_OUTPUT" == true ]]; then
+        NLM_NB_ID="$NOTEBOOK_ID" NLM_ATYPE="$ARTIFACT_TYPE" NLM_AID="$ARTIFACT_ID" NLM_STATUS="$STATUS" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "artifact_type": os.environ["NLM_ATYPE"], "artifact_id": os.environ["NLM_AID"], "status": os.environ["NLM_STATUS"]}))'
+    fi
     exit 1
 fi
 
@@ -330,4 +365,6 @@ if [[ -n "$DOWNLOAD_PATH" ]]; then
 fi
 
 # Output final JSON
-NLM_NB_ID="$NOTEBOOK_ID" NLM_ATYPE="$ARTIFACT_TYPE" NLM_AID="$ARTIFACT_ID" NLM_STATUS="$STATUS" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "artifact_type": os.environ["NLM_ATYPE"], "artifact_id": os.environ["NLM_AID"], "status": os.environ["NLM_STATUS"]}))'
+if [[ "$JSON_OUTPUT" == true ]]; then
+    NLM_NB_ID="$NOTEBOOK_ID" NLM_ATYPE="$ARTIFACT_TYPE" NLM_AID="$ARTIFACT_ID" NLM_STATUS="$STATUS" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "artifact_type": os.environ["NLM_ATYPE"], "artifact_id": os.environ["NLM_AID"], "status": os.environ["NLM_STATUS"]}))'
+fi

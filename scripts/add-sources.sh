@@ -22,6 +22,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/retry.sh"
 
+JSON_OUTPUT=true
+QUIET=false
+VERBOSE=false
+
+log_info() {
+    if [[ "$QUIET" != true ]]; then
+        echo -e "$1" >&2
+    fi
+}
+
+log_error() {
+    echo -e "$1" >&2
+}
+
+debug() {
+    if [[ "$VERBOSE" == true && "$QUIET" != true ]]; then
+        echo -e "${YELLOW}Debug:${NC} $1" >&2
+    fi
+}
+
 # Show help
 show_help() {
     cat << EOF
@@ -30,6 +50,9 @@ Usage: $(basename "$0") <notebook-id> <source1> [source2] ...
 Add sources to an existing NotebookLM notebook.
 
 Options:
+  --json       Emit JSON summary on stdout (default)
+  --quiet      Suppress non-critical logs
+  --verbose    Print additional diagnostics
   --dry-run    Print actions and exit without adding sources
   --no-retry   Disable retry/backoff for nlm operations
   --text-chunk-size <N>  Chunk long text sources into parts of ~N characters (default: 8000)
@@ -72,6 +95,18 @@ while [[ $# -gt 0 ]]; do
             show_help
             exit 0
             ;;
+        --json)
+            JSON_OUTPUT=true
+            shift
+            ;;
+        --quiet)
+            QUIET=true
+            shift
+            ;;
+        --verbose)
+            VERBOSE=true
+            shift
+            ;;
         --dry-run)
             DRY_RUN=true
             shift
@@ -90,6 +125,8 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+debug "verbose enabled"
 
 if [[ "$NO_RETRY" == true ]]; then
     export NLM_NO_RETRY=true
@@ -114,9 +151,9 @@ print(n)
 
 # Check arguments
 if [ $# -lt 2 ]; then
-    echo -e "${RED}Error: Not enough arguments${NC}" >&2
-    echo "Usage: $(basename "$0") <notebook-id> <source1> [source2] ..." >&2
-    echo "Try '$(basename "$0") --help' for more information." >&2
+    log_error "${RED}Error: Not enough arguments${NC}"
+    log_error "Usage: $(basename "$0") <notebook-id> <source1> [source2] ..."
+    log_error "Try '$(basename "$0") --help' for more information."
     exit 2
 fi
 
@@ -135,29 +172,31 @@ with open(sys.argv[1], "r", encoding="utf-8", errors="replace") as f:
 PY
 )
                 n=$(count_text_chunks "$text" "$TEXT_CHUNK_SIZE")
-                echo "Would add to $NOTEBOOK_ID: textfile:$path ($n chunk(s), size=$TEXT_CHUNK_SIZE)" >&2
+                log_info "Would add to $NOTEBOOK_ID: textfile:$path ($n chunk(s), size=$TEXT_CHUNK_SIZE)"
             else
-                echo "Would add to $NOTEBOOK_ID: textfile:$path (missing file)" >&2
+                log_info "Would add to $NOTEBOOK_ID: textfile:$path (missing file)"
             fi
         elif [[ "$source" =~ ^text: ]]; then
             text_content="${source#text:}"
             n=$(count_text_chunks "$text_content" "$TEXT_CHUNK_SIZE")
             if [[ "$n" -gt 1 ]]; then
-                echo "Would add to $NOTEBOOK_ID: text:(chunked $n parts, size=$TEXT_CHUNK_SIZE)" >&2
+                log_info "Would add to $NOTEBOOK_ID: text:(chunked $n parts, size=$TEXT_CHUNK_SIZE)"
             else
-                echo "Would add to $NOTEBOOK_ID: $source" >&2
+                log_info "Would add to $NOTEBOOK_ID: $source"
             fi
         else
-            echo "Would add to $NOTEBOOK_ID: $source" >&2
+            log_info "Would add to $NOTEBOOK_ID: $source"
         fi
     done
-    NLM_NB_ID="$NOTEBOOK_ID" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "dry_run": True}))'
+    if [[ "$JSON_OUTPUT" == true ]]; then
+        NLM_NB_ID="$NOTEBOOK_ID" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "dry_run": True}))'
+    fi
     exit 0
 fi
 
 # Verify notebook exists
 if ! retry_cmd "nlm list sources (verify notebook)" nlm list sources "$NOTEBOOK_ID" >/dev/null; then
-    echo -e "${RED}Error: Notebook '$NOTEBOOK_ID' not found${NC}" >&2
+    log_error "${RED}Error: Notebook '$NOTEBOOK_ID' not found${NC}"
     exit 2
 fi
 
@@ -223,13 +262,13 @@ add_text_chunked_b64_stream() {
     while IFS= read -r b64; do
         chunk_num=$((chunk_num + 1))
         chunk_text=$(printf '%s' "$b64" | python3 -c 'import sys, base64; print(base64.b64decode(sys.stdin.read()).decode("utf-8"))')
-        echo -e "${YELLOW}Adding text chunk $chunk_num:${NC} $what" >&2
+        log_info "${YELLOW}Adding text chunk $chunk_num:${NC} $what"
         if retry_cmd "nlm add text (chunk)" nlm add text "$NOTEBOOK_ID" "$chunk_text" 2>>"$ERROR_LOG"; then
             ((SOURCES_ADDED++))
-            echo -e "${GREEN}✓ Added text chunk${NC}" >&2
+            log_info "${GREEN}✓ Added text chunk${NC}"
         else
             ((SOURCES_FAILED++))
-            echo -e "${RED}✗ Failed to add text chunk${NC}" >&2
+            log_error "${RED}✗ Failed to add text chunk${NC}"
             overall_rc=1
         fi
     done
@@ -244,13 +283,13 @@ add_source() {
 
     # Detect source type
     if [[ "$source" =~ ^https?:// ]]; then
-        echo -e "${YELLOW}Adding URL source:${NC} $source" >&2
+        log_info "${YELLOW}Adding URL source:${NC} $source"
         if retry_cmd "nlm add url" nlm add url "$NOTEBOOK_ID" "$source" 2>>"$ERROR_LOG"; then
             ((SOURCES_ADDED++))
-            echo -e "${GREEN}✓ Added URL source${NC}" >&2
+            log_info "${GREEN}✓ Added URL source${NC}"
         else
             ((SOURCES_FAILED++))
-            echo -e "${RED}✗ Failed to add URL source${NC}" >&2
+            log_error "${RED}✗ Failed to add URL source${NC}"
             result=1
         fi
     elif [[ "$source" =~ ^text: ]]; then
@@ -258,56 +297,56 @@ add_source() {
         local text_content="${source#text:}"
         text_len=$(printf '%s' "$text_content" | wc -c | tr -d ' ')
         if [[ "$text_len" -gt "$TEXT_CHUNK_SIZE" ]]; then
-            echo -e "${YELLOW}Adding long text source (chunked)${NC} (~${text_len} chars, chunk size: $TEXT_CHUNK_SIZE)" >&2
+            log_info "${YELLOW}Adding long text source (chunked)${NC} (~${text_len} chars, chunk size: $TEXT_CHUNK_SIZE)"
             emit_text_chunks_b64 "inline" "$text_content" "$TEXT_CHUNK_SIZE" | add_text_chunked_b64_stream "inline"
             result=$?
         else
-            echo -e "${YELLOW}Adding text source${NC}" >&2
+            log_info "${YELLOW}Adding text source${NC}"
             if retry_cmd "nlm add text" nlm add text "$NOTEBOOK_ID" "$text_content" 2>>"$ERROR_LOG"; then
                 ((SOURCES_ADDED++))
-                echo -e "${GREEN}✓ Added text source${NC}" >&2
+                log_info "${GREEN}✓ Added text source${NC}"
             else
                 ((SOURCES_FAILED++))
-                echo -e "${RED}✗ Failed to add text source${NC}" >&2
+                log_error "${RED}✗ Failed to add text source${NC}"
                 result=1
             fi
         fi
     elif [[ "$source" =~ ^textfile: ]]; then
         local path="${source#textfile:}"
         if [[ ! -f "$path" ]]; then
-            echo -e "${RED}Error: textfile not found:${NC} $path" >&2
+            log_error "${RED}Error: textfile not found:${NC} $path"
             ((SOURCES_FAILED++))
             result=1
         else
-            echo -e "${YELLOW}Adding text file (chunked)${NC}: $path (chunk size: $TEXT_CHUNK_SIZE)" >&2
+            log_info "${YELLOW}Adding text file (chunked)${NC}: $path (chunk size: $TEXT_CHUNK_SIZE)"
             emit_textfile_chunks_b64 "$path" "$TEXT_CHUNK_SIZE" | add_text_chunked_b64_stream "$(basename "$path")"
             result=$?
         fi
     elif [[ "$source" =~ ^drive:// ]]; then
         # Remove "drive://" prefix
         local drive_id="${source#drive://}"
-        echo -e "${YELLOW}Adding Drive source:${NC} $drive_id" >&2
+        log_info "${YELLOW}Adding Drive source:${NC} $drive_id"
         if retry_cmd "nlm add drive" nlm add drive "$NOTEBOOK_ID" "$drive_id" 2>>"$ERROR_LOG"; then
             ((SOURCES_ADDED++))
-            echo -e "${GREEN}✓ Added Drive source${NC}" >&2
+            log_info "${GREEN}✓ Added Drive source${NC}"
         else
             ((SOURCES_FAILED++))
-            echo -e "${RED}✗ Failed to add Drive source${NC}" >&2
+            log_error "${RED}✗ Failed to add Drive source${NC}"
             result=1
         fi
     elif [[ -f "$source" ]]; then
-        echo -e "${RED}Error: File sources not yet supported by nlm CLI${NC}" >&2
-        echo -e "${YELLOW}Source:${NC} $source" >&2
+        log_error "${RED}Error: File sources not yet supported by nlm CLI${NC}"
+        log_error "${YELLOW}Source:${NC} $source"
         ((SOURCES_FAILED++))
         result=1
     else
-        echo -e "${RED}Error: Could not detect source type for: $source${NC}" >&2
-        echo -e "${YELLOW}Supported formats:${NC}" >&2
-        echo "  - URLs: https://... or http://..." >&2
-        echo "  - Text: text:content" >&2
-        echo "  - Text file: textfile:/path/to/file.txt" >&2
-        echo "  - Drive: drive://file-id" >&2
-        echo "  - Files: /path/to/file (not yet supported)" >&2
+        log_error "${RED}Error: Could not detect source type for: $source${NC}"
+        log_error "${YELLOW}Supported formats:${NC}"
+        log_error "  - URLs: https://... or http://..."
+        log_error "  - Text: text:content"
+        log_error "  - Text file: textfile:/path/to/file.txt"
+        log_error "  - Drive: drive://file-id"
+        log_error "  - Files: /path/to/file (not yet supported)"
         ((SOURCES_FAILED++))
         result=1
     fi
@@ -322,18 +361,20 @@ done
 
 # Show errors if any
 if [ -s "$ERROR_LOG" ]; then
-    echo -e "\n${RED}Errors encountered:${NC}" >&2
+    log_error "\n${RED}Errors encountered:${NC}"
     cat "$ERROR_LOG" >&2
 fi
 
 # Output JSON using Python for proper escaping
-NLM_NB_ID="$NOTEBOOK_ID" NLM_ADDED="$SOURCES_ADDED" NLM_FAILED="$SOURCES_FAILED" python3 -c '
+if [[ "$JSON_OUTPUT" == true ]]; then
+    NLM_NB_ID="$NOTEBOOK_ID" NLM_ADDED="$SOURCES_ADDED" NLM_FAILED="$SOURCES_FAILED" python3 -c '
 import json, os
 print(json.dumps({
     "notebook_id": os.environ["NLM_NB_ID"],
     "sources_added": int(os.environ["NLM_ADDED"]),
     "sources_failed": int(os.environ["NLM_FAILED"])
 }))'
+fi
 
 # Exit with appropriate code
 if [ $SOURCES_FAILED -gt 0 ]; then
