@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Export a NotebookLM notebook to a local directory structure.
-# Usage: ./export-notebook.sh <notebook-id-or-name> [--output DIR] [--format FORMAT]
+# Usage: ./export-notebook.sh <notebook-id-or-name> [--output DIR] [--format FORMAT] [--dry-run]
 
 show_help() {
   cat <<EOF
@@ -16,6 +16,7 @@ Arguments:
 Options:
   --output <dir>     Output directory (default: ./exports)
   --format <format>  Export format: notebooklm, obsidian, notion, anki (default: notebooklm)
+  --dry-run          Print planned export actions and exit without downloading
   -h, --help         Show this help message
 
 Examples:
@@ -30,6 +31,7 @@ EOF
 NOTEBOOK_ARG=""
 BASE_OUTPUT="./exports"
 FORMAT="notebooklm"
+DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -43,6 +45,10 @@ while [[ $# -gt 0 ]]; do
     --format)
       FORMAT="$2"
       shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      shift
       ;;
     -*)
       echo "Unknown option: $1" >&2
@@ -112,6 +118,15 @@ fi
 OUTPUT_DIR="$BASE_OUTPUT/$SLUG"
 echo "Exporting: $TITLE"
 echo "Output:    $OUTPUT_DIR"
+
+if [[ "$DRY_RUN" == true ]]; then
+  echo "Dry-run: would create directory structure and export sources/notes/artifacts" >&2
+  if [[ "$FORMAT" != "notebooklm" ]]; then
+    echo "Dry-run: would run format conversion to $FORMAT" >&2
+  fi
+  NLM_OUT="$OUTPUT_DIR" NLM_FMT="$FORMAT" python3 -c 'import json, os; print(json.dumps({"dry_run": True, "output_dir": os.environ["NLM_OUT"], "format": os.environ["NLM_FMT"]}))'
+  exit 0
+fi
 
 # --- Create directory structure ---
 mkdir -p "$OUTPUT_DIR"/{sources,chat,notes,studio/{audio,video,documents,visual,interactive}}

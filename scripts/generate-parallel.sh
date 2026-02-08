@@ -15,6 +15,7 @@ shift
 ARTIFACT_TYPES=()
 WAIT_FLAG=false
 DOWNLOAD_DIR=""
+DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,6 +32,10 @@ while [[ $# -gt 0 ]]; do
       WAIT_FLAG=true
       shift 2
       ;;
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
     --help)
       cat <<EOF
 Usage: generate-parallel.sh <notebook-id> <types...> [options]
@@ -46,6 +51,8 @@ Arguments:
 Options:
   --wait              Wait for all artifacts to complete
   --download <dir>    Download all artifacts to directory (implies --wait)
+  --dry-run           Print planned actions and exit without creating artifacts
+  -h, --help          Show this help message
 
 Examples:
   # Generate 3 artifacts in parallel
@@ -55,6 +62,10 @@ Examples:
   ./generate-parallel.sh abc-123 audio,video --download ./artifacts
 EOF
       exit 0
+      ;;
+    -h)
+      # Keep help consistent across scripts.
+      set -- --help
       ;;
     *)
       # Split comma-separated types
@@ -71,6 +82,25 @@ if [ ${#ARTIFACT_TYPES[@]} -eq 0 ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ "$DRY_RUN" == true ]]; then
+  echo "=== Parallel Artifact Generation (dry-run) ===" >&2
+  echo "Notebook: $NOTEBOOK_ID" >&2
+  echo "Artifacts: ${ARTIFACT_TYPES[*]}" >&2
+  echo "Wait: $WAIT_FLAG" >&2
+  if [[ -n "$DOWNLOAD_DIR" ]]; then
+    echo "Download dir: $DOWNLOAD_DIR" >&2
+  fi
+  for artifact_type in "${ARTIFACT_TYPES[@]}"; do
+    if [[ "$WAIT_FLAG" == true ]]; then
+      echo "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\" --wait" >&2
+    else
+      echo "Would run: $SCRIPT_DIR/generate-studio.sh \"$NOTEBOOK_ID\" \"$artifact_type\"" >&2
+    fi
+  done
+  NLM_NB_ID="$NOTEBOOK_ID" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "dry_run": True}))'
+  exit 0
+fi
 
 echo "=== Parallel Artifact Generation ==="
 echo "Notebook: $NOTEBOOK_ID"

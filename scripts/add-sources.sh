@@ -23,6 +23,10 @@ Usage: $(basename "$0") <notebook-id> <source1> [source2] ...
 
 Add sources to an existing NotebookLM notebook.
 
+Options:
+  --dry-run    Print actions and exit without adding sources
+  -h, --help   Show this help message
+
 Arguments:
   notebook-id    The ID of the notebook to add sources to
   source1...     One or more sources to add
@@ -54,6 +58,12 @@ if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
     exit 0
 fi
 
+DRY_RUN=false
+if [[ "${1:-}" == "--dry-run" ]]; then
+    DRY_RUN=true
+    shift
+fi
+
 # Check arguments
 if [ $# -lt 2 ]; then
     echo -e "${RED}Error: Not enough arguments${NC}" >&2
@@ -64,6 +74,14 @@ fi
 
 NOTEBOOK_ID="$1"
 shift
+
+if [[ "$DRY_RUN" == true ]]; then
+    for source in "$@"; do
+        echo "Would add to $NOTEBOOK_ID: $source" >&2
+    done
+    NLM_NB_ID="$NOTEBOOK_ID" python3 -c 'import json, os; print(json.dumps({"notebook_id": os.environ["NLM_NB_ID"], "dry_run": True}))'
+    exit 0
+fi
 
 # Verify notebook exists
 if ! nlm list sources "$NOTEBOOK_ID" &>/dev/null; then
