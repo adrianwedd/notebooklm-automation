@@ -21,6 +21,9 @@ jobs:
       - name: Retry helper self-test
         run: bash tests/retry-helper-test.sh
 
+      - name: Text chunking dry-run self-test
+        run: bash tests/text-chunking-dryrun-test.sh
+
       - name: Python compile
         run: python3 -m py_compile lib/*.py
 
