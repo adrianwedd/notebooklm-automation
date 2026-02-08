@@ -9,6 +9,6 @@
     {"type": "report"},
     {"type": "mindmap"},
     {"type": "quiz"},
-    {"type": "data-table"}
+    {"type": "data-table", "description": "Extract key findings, metrics, and comparisons into a structured table."}
   ]
 }
