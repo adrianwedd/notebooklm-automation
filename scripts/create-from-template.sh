@@ -29,10 +29,7 @@ Examples:
 Available templates:
 EOF
   python3 "$SCRIPT_DIR/../lib/template_engine.py" list | \
-    python3 -c 'import sys, json
-templates = json.load(sys.stdin)
-for t in templates:
-    print("  {tid:30} ({cat})".format(tid=t.get("id", ""), cat=t.get("category", "")))'
+    python3 "$SCRIPT_DIR/../lib/json_tools.py" print-templates
   exit 0
 }
 

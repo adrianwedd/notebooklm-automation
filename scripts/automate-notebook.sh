@@ -188,8 +188,8 @@ STUDIO_JSON=$(echo "$CONFIG_DATA" | python3 -c 'import sys, json; print(json.dum
 
 info "Config loaded successfully"
 info "  Title: $TITLE"
-info "  Sources: $(echo "$SOURCES_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')"
-info "  Studio artifacts: $(echo "$STUDIO_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')"
+info "  Sources: $(echo "$SOURCES_JSON" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len)"
+info "  Studio artifacts: $(echo "$STUDIO_JSON" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len)"
 if [[ "$DRY_RUN" == true ]]; then
     warn "Dry-run mode enabled: no changes will be made."
 fi
@@ -240,7 +240,7 @@ print(config.get("smart_creation", {}).get("depth", 5))
             info "  ./scripts/create-notebook.sh \"$TITLE\""
         fi
 
-        SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
+        SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len)
         if [[ "$SOURCE_COUNT" -gt 0 ]]; then
             info "Would add sources ($SOURCE_COUNT):"
             while IFS= read -r source; do
@@ -257,7 +257,7 @@ print(config.get("smart_creation", {}).get("depth", 5))
         fi
     fi
 
-    STUDIO_COUNT=$(echo "$STUDIO_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
+    STUDIO_COUNT=$(echo "$STUDIO_JSON" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len)
     if [[ "$STUDIO_COUNT" -gt 0 ]]; then
         info "Would generate artifacts ($STUDIO_COUNT):"
         if [[ "$PARALLEL_FLAG" == true && "$STUDIO_COUNT" -gt 1 ]]; then
@@ -439,7 +439,7 @@ if match:
   SOURCES_ADDED=0
   SOURCES_FAILED=0
 
-  SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
+  SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len)
 
   if [[ "$SOURCE_COUNT" -eq 0 ]]; then
     warn "No sources to add"
@@ -487,7 +487,7 @@ section "Phase 3: Generating Studio Artifacts"
 ARTIFACTS_CREATED=0
 ARTIFACTS_FAILED=0
 
-STUDIO_COUNT=$(echo "$STUDIO_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
+STUDIO_COUNT=$(echo "$STUDIO_JSON" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len)
 
 if [[ "$STUDIO_COUNT" -eq 0 ]]; then
     warn "No studio artifacts to generate"

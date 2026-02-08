@@ -24,6 +24,9 @@ jobs:
       - name: Text chunking dry-run self-test
         run: bash tests/text-chunking-dryrun-test.sh
 
+      - name: JSON tools self-test
+        run: bash tests/json-tools-test.sh
+
       - name: Python compile
         run: python3 -m py_compile lib/*.py
 

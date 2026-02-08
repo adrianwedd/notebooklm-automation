@@ -90,7 +90,7 @@ if [[ $LIST_EXIT -ne 0 ]]; then
   echo "$NOTEBOOKS" >&2
   exit 2
 fi
-TOTAL=$(echo "$NOTEBOOKS" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
+TOTAL=$(echo "$NOTEBOOKS" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len 2>/dev/null || echo 0)
 
 echo "Found $TOTAL notebooks to export"
 echo ""
