@@ -109,12 +109,12 @@ exports/
     ├── metadata.json           # Notebook metadata
     ├── sources/
     │   ├── index.json         # Source list
-    │   └── *.md               # Source content
+    │   └── *--<source-id>.md  # Source content (stable filenames)
     ├── chat/
     │   └── index.json         # Empty (API limitation)
     ├── notes/
     │   ├── index.json         # Notes list
-    │   └── *.md               # Individual notes
+    │   └── *--<note-id>.md    # Individual notes (stable filenames)
     └── studio/
         ├── manifest.json      # Artifact list
         ├── audio/
