@@ -1,0 +1,35 @@
+name: Static Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bash syntax
+        run: bash -n scripts/*.sh
+
+      - name: ShellCheck
+        run: shellcheck -x scripts/*.sh
+
+      - name: Python compile
+        run: python3 -m py_compile lib/*.py
+
+      - name: Validate template JSON
+        run: |
+          python3 - <<'PY'
+          import json
+          import pathlib
+
+          for p in pathlib.Path("templates").rglob("*.json"):
+            with p.open("r", encoding="utf-8") as f:
+              json.load(f)
+          print("templates JSON: ok")
+          PY
+
