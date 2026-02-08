@@ -227,7 +227,11 @@ with open(os.environ["NLM_CONFIG"]) as f:
 print(config.get("smart_creation", {}).get("depth", 5))
 ')
         info "Would run smart creation:"
-        info "  ./scripts/research-topic.sh \"$SMART_TOPIC\" --depth \"$SMART_DEPTH\""
+        if [[ "$NO_RETRY" == true ]]; then
+            info "  ./scripts/research-topic.sh \"$SMART_TOPIC\" --depth \"$SMART_DEPTH\" --no-retry"
+        else
+            info "  ./scripts/research-topic.sh \"$SMART_TOPIC\" --depth \"$SMART_DEPTH\""
+        fi
     else
         info "Would create notebook:"
         if [[ "$NO_RETRY" == true ]]; then
@@ -318,8 +322,8 @@ except Exception:
     print("false")
 ')
 
-if [[ "$SMART_MODE" == "True" || "$SMART_MODE" == "true" ]]; then
-  info "Smart creation mode enabled"
+    if [[ "$SMART_MODE" == "True" || "$SMART_MODE" == "true" ]]; then
+        info "Smart creation mode enabled"
 
   # Extract smart creation config
   SMART_TOPIC=$(NLM_CONFIG="$CONFIG_FILE" python3 -c '
@@ -342,6 +346,26 @@ print(config.get("smart_creation", {}).get("depth", 5))
 
   section "Smart Creation: Researching '$SMART_TOPIC'"
 
+  # Smart creation requires optional research deps.
+  set +e
+  python3 - <<'PY'
+import sys
+missing = []
+for mod in ("requests", "ddgs"):
+  try:
+    __import__(mod)
+  except Exception:
+    missing.append(mod)
+if missing:
+  print("Missing optional research dependencies: " + ", ".join(missing), file=sys.stderr)
+  sys.exit(1)
+PY
+  DEPS_RC=$?
+  set -e
+  if [[ $DEPS_RC -ne 0 ]]; then
+    error "Smart creation requires optional Python deps. Install with: pip3 install -r requirements-research.txt"
+  fi
+
   # Use research-topic.sh for source discovery
   info "Searching for sources (depth: $SMART_DEPTH)..."
 
@@ -350,7 +374,11 @@ print(config.get("smart_creation", {}).get("depth", 5))
   trap 'rm -f "$RESEARCH_OUTPUT"' EXIT
 
   # Run research (creates notebook and adds sources)
-  "$SCRIPT_DIR/research-topic.sh" "$SMART_TOPIC" --depth "$SMART_DEPTH" \
+  RESEARCH_ARGS=("$SCRIPT_DIR/research-topic.sh" "$SMART_TOPIC" --depth "$SMART_DEPTH")
+  if [[ "$NO_RETRY" == true ]]; then
+    RESEARCH_ARGS+=(--no-retry)
+  fi
+  "${RESEARCH_ARGS[@]}" \
     2>&1 | tee "$RESEARCH_OUTPUT"
 
   # Extract notebook ID from research output

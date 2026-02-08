@@ -41,11 +41,16 @@ Be respectful and inclusive in all interactions. This project follows standard o
 ### Install Development Dependencies
 
 ```bash
-# Install Python dependencies for smart creation features
+# Optional: install Python dependencies for smart creation features
 pip3 install -r requirements-research.txt
 
 # Authenticate with NotebookLM
 nlm login
+```
+
+Note: If pip is blocked by an externally-managed environment, use a venv:
+```bash
+python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements-research.txt
 ```
 
 ### Verify Setup
