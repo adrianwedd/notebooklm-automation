@@ -35,13 +35,19 @@ This opens Chrome to extract authentication cookies. You'll see:
 
 **Single notebook:**
 ```bash
-./scripts/export-notebook.sh "notebook name" ./exports
+./scripts/export-notebook.sh "notebook name" --output ./exports
 ```
 
 **All notebooks:**
 ```bash
-./scripts/export-all.sh ./exports --continue-on-error
+./scripts/export-all.sh --output ./exports --continue-on-error
 ```
+
+## CLI Output Conventions
+
+- Scripts emit a single JSON object on stdout by default (`--json`).
+- Human-readable logs and progress go to stderr.
+- Use `--quiet` to suppress non-critical logs (useful for piping).
 
 ## Features
 
@@ -151,16 +157,16 @@ Export a single notebook by ID or name substring.
 
 **Usage:**
 ```bash
-./scripts/export-notebook.sh <notebook-id-or-name> [output-dir] [--format FORMAT]
+./scripts/export-notebook.sh <notebook-id-or-name> --output <dir> [--format FORMAT]
 ```
 
 **Examples:**
 ```bash
 # By name substring (case-insensitive)
-./scripts/export-notebook.sh "machine learning" ./exports
+./scripts/export-notebook.sh "machine learning" --output ./exports
 
 # By UUID
-./scripts/export-notebook.sh "abc-123-def-456" ./exports
+./scripts/export-notebook.sh "abc-123-def-456" --output ./exports
 ```
 
 ### Export Formats
@@ -169,14 +175,14 @@ Export notebooks in multiple formats for knowledge management tools.
 
 **Usage:**
 ```bash
-./scripts/export-notebook.sh <notebook-id> <output-dir> [--format FORMAT]
+./scripts/export-notebook.sh <notebook-id> --output <dir> [--format FORMAT]
 ```
 
 **Available formats:**
 
 **Obsidian** - Vault structure with wikilinks
 ```bash
-./scripts/export-notebook.sh abc-123 ./output --format obsidian
+./scripts/export-notebook.sh abc-123 --output ./output --format obsidian
 
 # Creates:
 # output-obsidian/
@@ -219,7 +225,7 @@ Batch export all notebooks with progress tracking.
 
 **Usage:**
 ```bash
-./scripts/export-all.sh [output-dir] [--continue-on-error]
+./scripts/export-all.sh --output <dir> [--continue-on-error]
 ```
 
 **Features:**
@@ -230,7 +236,7 @@ Batch export all notebooks with progress tracking.
 
 **Example:**
 ```bash
-./scripts/export-all.sh ./exports --continue-on-error
+./scripts/export-all.sh --output ./exports --continue-on-error
 ```
 
 Output:

@@ -52,7 +52,7 @@ cleanup() {
         echo -e "${GREEN}Removed temp directory: $TEMP_DIR${NC}"
     fi
 
-    exit $exit_code
+    exit "$exit_code"
 }
 
 # Function to delete all test notebooks
@@ -124,13 +124,14 @@ TEST_TITLE="Integration Test $(date +%s)"
 info "Creating notebook: $TEST_TITLE"
 
 set +e
-CREATE_OUTPUT=$("$SCRIPT_DIR/create-notebook.sh" "$TEST_TITLE" 2>&1)
+CREATE_STDERR="$TEMP_DIR/create-notebook.stderr"
+CREATE_OUTPUT=$("$SCRIPT_DIR/create-notebook.sh" --quiet "$TEST_TITLE" 2>"$CREATE_STDERR")
 CREATE_EXIT=$?
 set -e
 
 if [[ $CREATE_EXIT -ne 0 ]]; then
     test_failed "Test 1 - create-notebook.sh failed"
-    echo "$CREATE_OUTPUT"
+    cat "$CREATE_STDERR" || true
 else
     # Extract notebook ID
     NOTEBOOK_ID=$(echo "$CREATE_OUTPUT" | python3 -c "
@@ -174,18 +175,18 @@ else
     TEST_TEXT="text:This is a test source for integration testing. It contains basic information about AI and machine learning."
 
     set +e
-    ADD_OUTPUT=$("$SCRIPT_DIR/add-sources.sh" "$NOTEBOOK_ID" "$TEST_URL" "$TEST_TEXT" 2>&1)
+    ADD_STDERR="$TEMP_DIR/add-sources.stderr"
+    ADD_OUTPUT=$("$SCRIPT_DIR/add-sources.sh" --quiet "$NOTEBOOK_ID" "$TEST_URL" "$TEST_TEXT" 2>"$ADD_STDERR")
     ADD_EXIT=$?
     set -e
 
     if [[ $ADD_EXIT -ne 0 ]]; then
         test_failed "Test 2 - add-sources.sh failed"
-        echo "$ADD_OUTPUT"
+        cat "$ADD_STDERR" || true
     else
         # Parse JSON output
-        LAST_LINE=$(echo "$ADD_OUTPUT" | tail -1)
-        SOURCES_ADDED=$(echo "$LAST_LINE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sources_added', 0))" 2>/dev/null || echo "0")
-        SOURCES_FAILED=$(echo "$LAST_LINE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sources_failed', 0))" 2>/dev/null || echo "0")
+        SOURCES_ADDED=$(echo "$ADD_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sources_added', 0))" 2>/dev/null || echo "0")
+        SOURCES_FAILED=$(echo "$ADD_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sources_failed', 0))" 2>/dev/null || echo "0")
 
         if [[ "$SOURCES_ADDED" -eq 2 && "$SOURCES_FAILED" -eq 0 ]]; then
             test_passed "Test 2 - added 2 sources (URL + text)"
@@ -207,17 +208,17 @@ else
     info "This will take ~1 minute, please wait..."
 
     set +e
-    STUDIO_OUTPUT=$("$SCRIPT_DIR/generate-studio.sh" "$NOTEBOOK_ID" quiz --wait 2>&1)
+    STUDIO_STDERR="$TEMP_DIR/generate-studio.stderr"
+    STUDIO_OUTPUT=$("$SCRIPT_DIR/generate-studio.sh" --quiet "$NOTEBOOK_ID" quiz --wait 2>"$STUDIO_STDERR")
     STUDIO_EXIT=$?
     set -e
 
     if [[ $STUDIO_EXIT -ne 0 ]]; then
         test_failed "Test 3 - generate-studio.sh failed"
-        echo "$STUDIO_OUTPUT"
+        cat "$STUDIO_STDERR" || true
     else
         # Parse JSON output
-        LAST_LINE=$(echo "$STUDIO_OUTPUT" | tail -1)
-        ARTIFACT_STATUS=$(echo "$LAST_LINE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status', 'unknown'))" 2>/dev/null || echo "unknown")
+        ARTIFACT_STATUS=$(echo "$STUDIO_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status', 'unknown'))" 2>/dev/null || echo "unknown")
 
         if [[ "$ARTIFACT_STATUS" == "completed" ]]; then
             test_passed "Test 3 - generated quiz artifact successfully"
@@ -244,13 +245,14 @@ else
         test_failed "Test 4 - export-notebook.sh not found or not executable"
     else
         set +e
-        EXPORT_OUTPUT=$("$SCRIPT_DIR/export-notebook.sh" "$NOTEBOOK_ID" "$EXPORT_DIR" 2>&1)
+        EXPORT_STDERR="$TEMP_DIR/export-notebook.stderr"
+        "$SCRIPT_DIR/export-notebook.sh" --quiet --id "$NOTEBOOK_ID" --output "$EXPORT_DIR" 1>/dev/null 2>"$EXPORT_STDERR"
         EXPORT_EXIT=$?
         set -e
 
         if [[ $EXPORT_EXIT -ne 0 ]]; then
             test_failed "Test 4 - export-notebook.sh failed"
-            echo "$EXPORT_OUTPUT"
+            cat "$EXPORT_STDERR" || true
         else
             # Check if files were created
             FILE_COUNT=$(find "$EXPORT_DIR" -type f | wc -l | tr -d ' ')
@@ -291,19 +293,19 @@ info "Created test config: $CONFIG_FILE"
 info "Running end-to-end automation (this will take ~1-2 minutes)..."
 
 set +e
-E2E_OUTPUT=$("$SCRIPT_DIR/automate-notebook.sh" --config "$CONFIG_FILE" 2>&1)
+E2E_STDERR="$TEMP_DIR/automate-notebook.stderr"
+E2E_OUTPUT=$("$SCRIPT_DIR/automate-notebook.sh" --quiet --config "$CONFIG_FILE" 2>"$E2E_STDERR")
 E2E_EXIT=$?
 set -e
 
 if [[ $E2E_EXIT -ne 0 ]]; then
     test_failed "Test 5 - automate-notebook.sh failed"
-    echo "$E2E_OUTPUT"
+    cat "$E2E_STDERR" || true
 else
-    # Parse JSON output - extract complete JSON block from first { to last }
-    JSON_OUTPUT=$(echo "$E2E_OUTPUT" | sed -n '/{/,/}/p')
-    E2E_NOTEBOOK_ID=$(echo "$JSON_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('notebook_id', ''))" 2>/dev/null || echo "")
-    E2E_SOURCES_ADDED=$(echo "$JSON_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sources_added', 0))" 2>/dev/null || echo "0")
-    E2E_ARTIFACTS_CREATED=$(echo "$JSON_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('artifacts_created', 0))" 2>/dev/null || echo "0")
+    # Parse JSON output (stdout is reserved for JSON)
+    E2E_NOTEBOOK_ID=$(echo "$E2E_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('notebook_id', ''))" 2>/dev/null || echo "")
+    E2E_SOURCES_ADDED=$(echo "$E2E_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sources_added', 0))" 2>/dev/null || echo "0")
+    E2E_ARTIFACTS_CREATED=$(echo "$E2E_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('artifacts_created', 0))" 2>/dev/null || echo "0")
 
     # Track notebook for cleanup
     if [[ -n "$E2E_NOTEBOOK_ID" ]]; then
