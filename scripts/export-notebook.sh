@@ -255,7 +255,7 @@ if [[ $SOURCES_EXIT -ne 0 ]]; then
   SOURCES="[]"
 fi
 echo "$SOURCES" > "$OUTPUT_DIR/sources/index.json"
-SOURCE_COUNT=$(echo "$SOURCES" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
+SOURCE_COUNT=$(echo "$SOURCES" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len 2>/dev/null || echo 0)
 echo "  [+] sources/index.json ($SOURCE_COUNT sources)"
 
 # Try to get source content for each source
@@ -300,7 +300,7 @@ if [[ $NOTES_EXIT -ne 0 ]]; then
 fi
 if echo "$NOTES_OUTPUT" | python3 -c 'import sys, json; json.load(sys.stdin)' 2>/dev/null; then
   echo "$NOTES_OUTPUT" > "$OUTPUT_DIR/notes/index.json"
-  NOTE_COUNT=$(echo "$NOTES_OUTPUT" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
+  NOTE_COUNT=$(echo "$NOTES_OUTPUT" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len)
   echo "  [+] notes/index.json ($NOTE_COUNT notes)"
   echo "$NOTES_OUTPUT" | python3 -c '
 import sys, json
@@ -333,7 +333,7 @@ if [[ $ARTIFACTS_EXIT -ne 0 ]]; then
   ARTIFACTS="[]"
 fi
 echo "$ARTIFACTS" > "$OUTPUT_DIR/studio/manifest.json"
-ARTIFACT_COUNT=$(echo "$ARTIFACTS" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
+ARTIFACT_COUNT=$(echo "$ARTIFACTS" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len 2>/dev/null || echo 0)
 echo "  [+] studio/manifest.json ($ARTIFACT_COUNT artifacts)"
 
 download_artifact() {

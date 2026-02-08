@@ -144,7 +144,7 @@ depth = int(os.environ["NLM_DEPTH"])
 print(json.dumps(sources[:depth]))
 ')
 
-SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')
+SOURCE_COUNT=$(echo "$SOURCES_JSON" | python3 "$SCRIPT_DIR/../lib/json_tools.py" len)
 echo "  Final: $SOURCE_COUNT unique sources"
 
 # Step 2: Create notebook with sources
