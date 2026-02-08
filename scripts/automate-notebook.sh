@@ -59,7 +59,9 @@ info() {
 }
 
 warn() {
-    echo -e "${YELLOW}$1${NC}" >&2
+    if [[ "${QUIET:-false}" != true ]]; then
+        echo -e "${YELLOW}$1${NC}" >&2
+    fi
 }
 
 section() {
@@ -152,7 +154,11 @@ python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$CONFIG_FILE" 2>/de
 # Validate against schema (if available)
 if [[ -x "$SCRIPT_DIR/validate-json.sh" && -f "$SCRIPT_DIR/../schemas/config.schema.json" ]]; then
     set +e
-    "$SCRIPT_DIR/validate-json.sh" --schema "$SCRIPT_DIR/../schemas/config.schema.json" --file "$CONFIG_FILE" >/dev/null
+    if [[ "${QUIET:-false}" == true ]]; then
+        "$SCRIPT_DIR/validate-json.sh" --quiet --schema "$SCRIPT_DIR/../schemas/config.schema.json" --file "$CONFIG_FILE" >/dev/null
+    else
+        "$SCRIPT_DIR/validate-json.sh" --schema "$SCRIPT_DIR/../schemas/config.schema.json" --file "$CONFIG_FILE" >/dev/null
+    fi
     SCHEMA_EXIT=$?
     set -e
     if [[ $SCHEMA_EXIT -eq 1 ]]; then

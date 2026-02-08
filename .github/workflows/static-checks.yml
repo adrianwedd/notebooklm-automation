@@ -30,6 +30,9 @@ jobs:
       - name: Help flags self-test
         run: bash tests/help-flags-test.sh
 
+      - name: Dry-run smoke tests (no auth)
+        run: bash tests/dry-run-smoke-test.sh
+
       - name: Python compile
         run: python3 -m py_compile lib/*.py
 

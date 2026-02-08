@@ -64,15 +64,8 @@ Examples:
 EOF
 }
 
-if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-  show_help
-  exit 0
-fi
-
-NOTEBOOK_ID="${1:?Usage: generate-parallel.sh <notebook-id> <types...> [--wait] [--download dir]}"
-shift
-
-# Parse artifact types and flags
+# Parse arguments (options can appear before/after positional args).
+NOTEBOOK_ID=""
 ARTIFACT_TYPES=()
 WAIT_FLAG=false
 DOWNLOAD_DIR=""
@@ -82,6 +75,10 @@ STUDIO_EXTRA_ARGS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --help|-h)
+      show_help
+      exit 0
+      ;;
     --json)
       JSON_OUTPUT=true
       shift
@@ -115,22 +112,28 @@ while [[ $# -gt 0 ]]; do
       NO_RETRY=true
       shift
       ;;
-    --help)
-      show_help
-      exit 0
-      ;;
-    -h)
-      # Keep help consistent across scripts.
-      set -- --help
+    -*)
+      echo "Unknown option: $1" >&2
+      exit 1
       ;;
     *)
-      # Split comma-separated types
-      IFS=',' read -ra TYPES <<< "$1"
-      ARTIFACT_TYPES+=("${TYPES[@]}")
+      if [[ -z "$NOTEBOOK_ID" ]]; then
+        NOTEBOOK_ID="$1"
+      else
+        # Split comma-separated types
+        IFS=',' read -ra TYPES <<< "$1"
+        ARTIFACT_TYPES+=("${TYPES[@]}")
+      fi
       shift
       ;;
   esac
 done
+
+if [[ -z "$NOTEBOOK_ID" ]]; then
+  echo "Error: Missing required argument: notebook-id" >&2
+  echo "Try --help for usage." >&2
+  exit 1
+fi
 
 if [ ${#ARTIFACT_TYPES[@]} -eq 0 ]; then
   echo "Error: No artifact types specified"
